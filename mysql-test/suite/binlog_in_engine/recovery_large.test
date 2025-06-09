@@ -14,6 +14,7 @@ SET GLOBAL gtid_slave_pos= '';
 
 --connection master
 --let $datadir= `SELECT @@datadir`
+--source include/kill_binlog_dump_threads.inc
 RESET MASTER;
 
 DROP TABLE IF EXISTS t1, t2;

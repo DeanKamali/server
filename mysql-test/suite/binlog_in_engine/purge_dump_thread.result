@@ -1,6 +1,13 @@
 include/master-slave.inc
 [connection master]
+connection slave;
+include/stop_slave.inc
+connection master;
+include/kill_binlog_dump_threads.inc
 RESET MASTER;
+connection slave;
+include/start_slave.inc
+connection master;
 CREATE TABLE t1 (a INT NOT NULL, b INT NOT NULL, c TEXT, PRIMARY KEY(a, b)) ENGINE=InnoDB;
 INSERT INTO t1 VALUES (0, 0, 'Start');
 *** Test iteration, RESTART=0

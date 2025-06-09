@@ -17,7 +17,14 @@
 # to test with. The --binlog-cache-size is set to 8k, so more event data than
 # that causes OOB binlogging.
 
+--connection slave
+--source include/stop_slave.inc
+--connection master
+--source include/kill_binlog_dump_threads.inc
 RESET MASTER;
+--connection slave
+--source include/start_slave.inc
+--connection master
 
 CREATE TABLE t1 (a INT NOT NULL, b INT NOT NULL, c TEXT, PRIMARY KEY(a, b)) ENGINE=InnoDB;
 INSERT INTO t1 VALUES (0, 0, 'Start');
