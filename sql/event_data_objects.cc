@@ -478,6 +478,15 @@ Event_queue_element::load_from_row(THD *thd, TABLE *table)
   if (table->s->fields < ET_FIELD_COUNT)
     DBUG_RETURN(TRUE);
 
+  if ((ptr= get_field(&mem_root, table->field[ET_FIELD_KIND])) == NullS)
+    DBUG_RETURN(true);
+
+  if (strcmp(ptr, "SCHEDULE") != 0)
+  {
+    trigger_event= true;
+    DBUG_RETURN(false);
+  }
+
   if (load_string_fields(table->field,
                          ET_FIELD_DB, &dbname,
                          ET_FIELD_NAME, &name,

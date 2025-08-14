@@ -54,6 +54,11 @@ public:
     ON_COMPLETION_PRESERVE
   };
 
+  enum enum_kind
+  {
+    SCHEDULE_EVENT, TRIGGER_EVENT
+  };
+
   int on_completion;
   int status;
   bool status_changed;
@@ -86,6 +91,7 @@ public:
   Item* item_expression;
   longlong expression;
   interval_type interval;
+  enum enum_kind kind;
 
   static Event_parse_data *
   new_instance(THD *thd);

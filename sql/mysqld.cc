@@ -5736,6 +5736,17 @@ static void test_lc_time_sz()
 }
 #endif//DBUG_OFF
 
+static void run_after_startup_triggers()
+{
+  if (opt_bootstrap)
+    return;
+}
+
+static void run_before_shutdown_triggers()
+{
+  if (opt_bootstrap)
+    return;
+}
 
 static void run_main_loop()
 {
@@ -6158,6 +6169,7 @@ int mysqld_main(int argc, char **argv)
   }
 #endif
 
+  run_after_startup_triggers();
 
   /* Signal threads waiting for server to be started */
   mysql_mutex_lock(&LOCK_server_started);
@@ -6173,6 +6185,8 @@ int mysqld_main(int argc, char **argv)
   run_main_loop();
 
   /* Shutdown requested */
+  run_before_shutdown_triggers();
+
   char *user= shutdown_user.load(std::memory_order_relaxed);
   sql_print_information(ER_DEFAULT(ER_NORMAL_SHUTDOWN), my_progname,
                         user ? user : "unknown");

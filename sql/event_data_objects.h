@@ -110,6 +110,7 @@ public:
   interval_type interval;
 
   bool dropped;
+  bool trigger_event= {false};
 
   uint execution_count;
 
