@@ -20,110 +20,172 @@
 #include <unordered_map> // Type of @ref MASTER_INFO_MAP
 #include <unordered_set> // seen set in `load_from()`
 #include <charconv>      // std::from/to_chars
-#include "../slave.h"    // init_str/floatvar_from_file
+#include "../slave.h"    // init_str/float/dynarray_int_var_from_file
 
-/// Replace an enum type with its underlying type or keep an int type as itself
-template<typename I> using underlying_type= typename std::conditional_t<
-  std::is_integral_v<I>,
-  std::enable_if<true, I>, // C++20 std::type_identity
-  std::underlying_type<I>
->::type;
-/* Number of fully-utilized decimal digits plus
+/** Number of fully-utilized decimal digits plus
   * the partially-utilized digit (e.g., the 2's place in "2147483647")
   * The sign (:
 */
 template<typename I> static constexpr size_t int_buf_size=
-  std::numeric_limits<underlying_type<I>>::digits10 + 2;
-static constexpr std::errc OK {};
-/// zero and 64-bit capable version of init_intvar_from_file()
-template<typename T, typename V>
-bool ChangeMaster::IntConfig<T, V>::load_from(IO_CACHE *file)
+  std::numeric_limits<I>::digits10 + 2;
+static constexpr auto OK= std::errc();
+/** @ref IO_CACHE version of std::from_chars()
+  @tparam I signed or unsigned integer type
+  @return `false` if successful or `true` if error
+*/
+
+template<typename I> bool from_chars(IO_CACHE *file, I &value)
 {
-  size_t size;
-  underlying_type<T> value;
   // The `\0` is not required in std::from_chars(), but my_b_gets() includes it.
-  char buf[int_buf_size<T> + 1];
-  if ((size= my_b_gets(file, buf, int_buf_size<T> + 1)) &&
-      std::from_chars(buf, &buf[size], value).ec != OK)
+  char buf[int_buf_size<I> + 1];
+  size_t size= my_b_gets(file, buf, int_buf_size<I> + 1);
+  return (!size || std::from_chars(buf, &buf[size], value).ec != OK);
+}
+template<typename I, typename T> bool from_chars(IO_CACHE *file, T &self)
+{
+  I value;
+  if (from_chars(file, value))
     return true;
-  *this= static_cast<T>(value);
+  self= std::move(value);
   return false;
 }
-template<typename T, typename V>
-void ChangeMaster::IntConfig<T, V>::save_to(IO_CACHE *file)
+/** @ref IO_CACHE version of std::to_chars()
+  @tparam I signed or unsigned integer type
+*/
+template<typename I> void to_chars(IO_CACHE *file, I value)
 {
   /*
     my_b_printf() uses a buffer too,
     so we might as well skip its format parsing step
   */
-  char buf[int_buf_size<T>];
-  std::to_chars_result to_chars_result= std::to_chars(
-    buf, &buf[int_buf_size<T>],
-    // C++23 std::to_underlying()
-    static_cast<underlying_type<T>>(this->operator T())
-  );
+  char buf[int_buf_size<I>];
+  std::to_chars_result to_chars_result=
+    std::to_chars(buf, &buf[int_buf_size<I>], value);
   DBUG_ASSERT(to_chars_result.ec == OK);
-  my_b_write(file, (const uchar *)buf, int_buf_size<T>);
+  my_b_write(file, (const uchar *)buf, int_buf_size<I>);
 }
 
-template<const char *&mariadbd_option>
-bool ChangeMaster::SSLPathConfig<mariadbd_option>::is_default()
-  { return !this->value[0] && this->value[1]; }
-template<const char *&mariadbd_option>
-bool ChangeMaster::SSLPathConfig<mariadbd_option>::set_default()
-{
-  this->value[0]= false;
-  this->value[1]= true;
-  return false;
-}
-template<const char *&mariadbd_option>
-const char *
-ChangeMaster::SSLPathConfig<mariadbd_option>::operator=(const char *value)
-{
-  if (value) // not `nullptr`
-  {
-    this->value[1]= false; // not default
-    strmake_buf(this->value, value);
-  }
-  return this->value;
-}
-template<const char *&mariadbd_option>
-bool ChangeMaster::SSLPathConfig<mariadbd_option>::load_from(IO_CACHE *file)
-{
-  this->value[1]= false; // not default
-  return init_strvar_from_file(this->value, FN_REFLEN, file, nullptr);
-}
-template<const char *&mariadbd_option>
-void ChangeMaster::SSLPathConfig<mariadbd_option>::save_to(IO_CACHE *file)
-  { my_b_write(file,
-    (const uchar *)(this->operator const char *()), strlen(*this)
-  ); }
+
+/// zero and 64-bit capable version of init_intvar_from_file()
+template<auto &_opt>
+bool ChangeMaster::OptionalIntConfig<_opt>::load_from(IO_CACHE *file)
+  { return from_chars<IntType>(file, *this); }
+template<auto &_opt>
+void ChangeMaster::OptionalIntConfig<_opt>::save_to(IO_CACHE *file)
+  { return to_chars(file, *this); }
 
 ChangeMaster::master_heartbeat_period_t::operator float()
 {
   return is_default() ? (
     ::master_heartbeat_period < 0 ?
       slave_net_timeout/2.0 : ::master_heartbeat_period
-    ) : this->value;
+    ) : period;
 }
 bool ChangeMaster::master_heartbeat_period_t::load_from(IO_CACHE *file)
-  { return init_floatvar_from_file(&this->value, file, 0); }
+  { return init_floatvar_from_file(&period, file, 0); }
 void ChangeMaster::master_heartbeat_period_t::save_to(IO_CACHE *file)
 {
   //TODO: `master_heartbeat_period` should at most be a `DECIMAL(10, 3)`.
   char buf[FLOATING_POINT_BUFFER];
-  size_t size= my_fcvt(this->operator float(), 3, buf, nullptr);
+  size_t size= my_fcvt(*this, 3, buf, nullptr);
   my_b_write(file, (const uchar *)buf, size);
+}
+
+template<bool &mariadbd_option>
+ChangeMaster::OptionalBoolConfig<mariadbd_option>::operator bool()
+  { return is_default() ? mariadbd_option : (value != NO); }
+template<bool &_opt>
+bool ChangeMaster::OptionalBoolConfig<_opt>::load_from(IO_CACHE *file)
+  { return from_chars<unsigned char>(file, *this); }
+template<bool &_opt>
+void ChangeMaster::OptionalBoolConfig<_opt>::save_to(IO_CACHE *file)
+  { return to_chars<unsigned char>(file, *this); }
+
+template<const char *&_opt>
+ChangeMaster::OptionalPathConfig<_opt> &
+ChangeMaster::OptionalPathConfig<_opt>::operator=(const char *value)
+{
+  if (value) // not `nullptr`
+  {
+    path[1]= false; // not default
+    strmake_buf(path, value);
+  }
+  return *this;
+}
+template<const char *&_opt>
+bool ChangeMaster::OptionalPathConfig<_opt>::is_default()
+  { return !path[0] && path[1]; }
+template<const char *&_opt>
+bool ChangeMaster::OptionalPathConfig<_opt>::set_default()
+{
+  path[0]= false;
+  path[1]= true;
+  return false;
+}
+template<const char *&_opt>
+bool ChangeMaster::OptionalPathConfig<_opt>::load_from(IO_CACHE *file)
+{
+  path[1]= false; // not default
+  return init_strvar_from_file(path, FN_REFLEN, file, nullptr);
+}
+template<const char *&_opt>
+void ChangeMaster::OptionalPathConfig<_opt>::save_to(IO_CACHE *file)
+{
+  const char *path= *this;
+  my_b_write(file, (const uchar *)path, strlen(path));
 }
 
 ChangeMaster::master_use_gtid_t::operator enum_master_use_gtid()
 {
-  return this->is_default() ? (
+  return is_default() ? (
     ::master_use_gtid > enum_master_use_gtid::DEFAULT ?
       ::master_use_gtid : gtid_supported ?
         enum_master_use_gtid::SLAVE_POS : enum_master_use_gtid::NO
-    ) : this->value;
+    ) : mode;
 }
+/// Replace this enum type with the integral type under its trench coat
+using use_gtid_t= std::underlying_type_t<enum_master_use_gtid>;
+bool ChangeMaster::master_use_gtid_t::load_from(IO_CACHE *file)
+{
+  use_gtid_t value;
+  if (from_chars(file, value) ||
+      value > static_cast<use_gtid_t>(enum_master_use_gtid::SLAVE_POS) ||
+      value < static_cast<use_gtid_t>(enum_master_use_gtid::CURRENT_POS))
+    return true;
+  *this= static_cast<enum_master_use_gtid>(value);
+  return false;
+}
+void ChangeMaster::master_use_gtid_t::save_to(IO_CACHE *file)
+{
+  return to_chars(file, static_cast<unsigned char>(
+    static_cast<enum_master_use_gtid>(*this))
+  );
+}
+
+bool ChangeMaster::IDListConfig::load_from(IO_CACHE *file)
+  { return init_dynarray_intvar_from_file(list, file); }
+/**
+  Unlike the old `Domain_id_filter::as_string()`,
+  this implementation does not require allocating the heap temporarily.
+*/
+void ChangeMaster::IDListConfig::save_to(IO_CACHE *file)
+{
+  to_chars(file, list->elements);
+  for (size_t i= 0; i < list->elements; ++i)
+  {
+    int32_t id;
+    get_dynamic(list, &id, i);
+    my_b_write_byte(file, ' ');
+    to_chars(file, id);
+  }
+}
+
+
+/**
+  Guard agaist extra left-overs at the end of file,
+  in case a later update causes the file to shrink compared to earlier contents
+*/
+static constexpr const char END_MARKER[]= "END_MARKER";
 
 /**
   std::mem_fn()-like replacement for
@@ -136,15 +198,10 @@ struct mem_fn
   template<typename M> mem_fn(M ChangeMaster::* pm):
     get([pm](ChangeMaster *self) -> Persistent & { return self->*pm; }) {}
 };
-/**
-  Guard agaist extra left-overs at the end of file,
-  in case a later update causes the file to shrink compared to earlier contents
-*/
-static constexpr const char *END_MARKER= "END_MARKER";
 /// An iterable for the `key=value` section of `@@master_info_file`
 // C++ default allocator to match that `mysql_execute_command()` uses `new`
 static const std::unordered_map<std::string_view, mem_fn> MASTER_INFO_MAP({
-  /* MySQL line-based section
+  /* MySQL line-based section:
     ChangeMaster::save_to() only annotates whether they are `DEFAULT`.
   */
   {"connect_retry"         , &ChangeMaster::master_connect_retry         },
@@ -159,11 +216,13 @@ static const std::unordered_map<std::string_view, mem_fn> MASTER_INFO_MAP({
   {"ssl_verify_server_cert", &ChangeMaster::master_ssl_verify_server_cert},
   {"heartbeat_period"      , &ChangeMaster::master_heartbeat_period      },
   {"retry_count"           , &ChangeMaster::master_retry_count           },
-  /* The actual MariaDB `key=value` section
+  /* The actual MariaDB `key=value` section:
     For backward compatibility,
     keys should match the corresponding old property name in @ref Master_info.
   */
-  {"using_gtid",             &ChangeMaster::master_use_gtid              },
+  {"using_gtid",        &ChangeMaster::master_use_gtid  },
+  {"do_domain_ids",     &ChangeMaster::do_domain_ids    },
+  {"ignore_domain_ids", &ChangeMaster::ignore_domain_ids},
   {END_MARKER, mem_fn()}
 });
 
@@ -171,14 +230,15 @@ static const std::unordered_map<std::string_view, mem_fn> MASTER_INFO_MAP({
 static constexpr size_t MAX_KEY_SIZE= sizeof("ssl_verify_server_cert");
 static const decltype(MASTER_INFO_MAP)::const_iterator KEY_NOT_FOUND=
   MASTER_INFO_MAP.cend(); // `constexpr` in C++26
+
 bool ChangeMaster::load_from(IO_CACHE *file)
 {
-  /**
+  /*
     10.0 does not have the `END_MARKER` before any left-overs at the
     end of the file. So ignore any but the first occurrence of a key.
   */
   std::unordered_set<const char *> seen{};
-  /* Parse additional `key=value` lines
+  /* Parse additional `key=value` lines:
     The "value" can then be parsed individually after consuming the`key=`.
   */
   while (true)
@@ -188,7 +248,7 @@ bool ChangeMaster::load_from(IO_CACHE *file)
     // Modified from the old `read_mi_key_from_file()`
     for (size_t i=0; i < MAX_KEY_SIZE; ++i)
     {
-      switch (char c= my_b_get(file)) {
+      switch (int c= my_b_get(file)) {
       case my_b_EOF:
         return true;
       case '=':
@@ -196,20 +256,20 @@ bool ChangeMaster::load_from(IO_CACHE *file)
       // fall-through
       case '\n':
       {
-        decltype(MASTER_INFO_MAP)::const_iterator find=
+        decltype(MASTER_INFO_MAP)::const_iterator found_kv=
           MASTER_INFO_MAP.find(std::string_view(
             key,
             i // size = exclusive end index of the string
           ));
         // The "unknown" lines would be ignored to facilitate downgrades.
-        if (find != KEY_NOT_FOUND)
+        if (found_kv != KEY_NOT_FOUND)
         {
-          const char *key= find->first.data();
+          const char *key= found_kv->first.data();
           if (key == END_MARKER)
             return false;
           else if (seen.insert(key).second) // if no previous insertion
           {
-            Persistent &config= find->second.get(this);
+            Persistent &config= found_kv->second.get(this);
             /*
               Keys that support saving the `DEFAULT` will represent the
               `DEFAULT` by omitting the `=value` part; though here we allow
@@ -225,20 +285,33 @@ bool ChangeMaster::load_from(IO_CACHE *file)
         key[i]= c;
       }
     }
-    break_for:
+    break_for:;
   }
 }
 
 void ChangeMaster::save_to(IO_CACHE *file)
 {
   /*
-    For the current set of configs, only ChangeMaster::master_use_gtid
-    is always saved as a `key=value` pair.
+    For the current set of configs,
+    only three are always saved as a `key=value` pair.
   */
   if (!master_use_gtid.is_default())
   {
     my_b_write(file, (const uchar *)"using_gtid=", sizeof("using_gtid"));
     master_use_gtid.save_to(file);
+    my_b_write_byte(file, '\n');
+  }
+  if (!do_domain_ids.is_default())
+  {
+    my_b_write(file, (const uchar *)"do_domain_ids=", sizeof("do_domain_ids"));
+    do_domain_ids.save_to(file);
+    my_b_write_byte(file, '\n');
+  }
+  if (!ignore_domain_ids.is_default())
+  {
+    my_b_write(file, (const uchar *)"ignore_domain_ids=",
+                     sizeof("ignore_domain_ids"));
+    ignore_domain_ids.save_to(file);
     my_b_write_byte(file, '\n');
   }
   for (auto &[key, member]: MASTER_INFO_MAP)

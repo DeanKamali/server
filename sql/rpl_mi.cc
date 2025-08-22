@@ -31,8 +31,9 @@
 static void init_master_log_pos(Master_info* mi);
 
 Master_info::Master_info(LEX_CSTRING *connection_name_arg,
-                         bool is_slave_recovery)
-  :Slave_reporting_capability("I/O"),
+                         bool is_slave_recovery):
+   ChangeMaster(domain_id_filter.m_domain_ids),
+   Slave_reporting_capability("I/O"),
    fd(-1), io_thd(0),
    rli(is_slave_recovery), port(MYSQL_PORT),
    checksum_alg_before_fd(BINLOG_CHECKSUM_ALG_UNDEF),
@@ -368,8 +369,6 @@ file '%s')", fname);
 
     mi->fd = fd;
     int port, master_log_pos, lines;
-    int ssl= 0, ssl_verify_server_cert= 0;
-    float master_heartbeat_period= 0.0;
     char *first_non_digit;
     char buf[HOSTNAME_LENGTH+1];
 
@@ -452,7 +451,7 @@ file '%s')", fname);
         in the file
       */
       if (lines >= LINE_FOR_MASTER_HEARTBEAT_PERIOD &&
-          init_floatvar_from_file(&master_heartbeat_period, &mi->file, 0.0))
+          mi->master_heartbeat_period.load_from(&mi->file))
         goto errwithmsg;
       /*
 	Starting from MySQL Cluster 6.3 master_bind might be in the file
@@ -500,7 +499,6 @@ file '%s')", fname);
       */
       if (lines >= LINE_FOR_LAST_MYSQL_FUTURE)
       {
-        bool seen_do_domain_ids=false, seen_ignore_domain_ids=false;
         /* Skip lines used by / reserved for MySQL >= 5.6. */
         for (size_t i= LINE_FOR_FIRST_MYSQL_5_6; i <= LINE_FOR_LAST_MYSQL_FUTURE; ++i)
         {
@@ -511,31 +509,7 @@ file '%s')", fname);
           `lines` is only the number of fixed-position entries.
           Proceed with `key=value` pairs without it
         */
-        while (!read_mi_key_from_file(buf, sizeof(buf), &mi->file, &got_eq))
-        {
-          else if (got_eq && !seen_do_domain_ids && !strcmp(buf, "do_domain_ids"))
-          {
-            if (mi->domain_id_filter.init_ids(&mi->file,
-                                              Domain_id_filter::DO_DOMAIN_IDS))
-            {
-              sql_print_error("Failed to initialize master info do_domain_ids");
-              goto errwithmsg;
-            }
-            seen_do_domain_ids= true;
-          }
-          else if (got_eq && !seen_ignore_domain_ids &&
-                   !strcmp(buf, "ignore_domain_ids"))
-          {
-            if (mi->domain_id_filter.init_ids(&mi->file,
-                                              Domain_id_filter::IGNORE_DOMAIN_IDS))
-            {
-              sql_print_error("Failed to initialize master info "
-                              "ignore_domain_ids");
-              goto errwithmsg;
-            }
-            seen_ignore_domain_ids= true;
-          }
-        }
+        mi->load_from(&mi->file);
       }
     }
 
@@ -552,10 +526,6 @@ file '%s')", fname);
     */
     mi->master_log_pos= (my_off_t) master_log_pos;
     mi->port= (uint) port;
-    mi->master_ssl= ssl;
-    mi->master_ssl_verify_server_cert= ssl_verify_server_cert;
-    mi->master_heartbeat_period=
-      MY_MIN(SLAVE_MAX_HEARTBEAT_PERIOD, master_heartbeat_period);
   }
   DBUG_PRINT("master_info",("log_file_name: %s  position: %ld",
                             mi->master_log_name,
@@ -708,11 +678,9 @@ int flush_master_info(Master_info* mi,
   mi->master_retry_count.save_to(file); my_b_write_byte(file, '\n');
   mi->master_ssl_crl    .save_to(file); my_b_write_byte(file, '\n');
   mi->master_ssl_crlpath.save_to(file); my_b_write_byte(file, '\n');
-  my_b_printf(file,
-              "\n\n\n\n\n\n\n\n\n\n\n"
-              "do_domain_ids=%s\n"
-              "ignore_domain_ids=%s\n",
-              do_domain_ids_buf, ignore_domain_ids_buf);
+  // Skip lines used by / reserved for MySQL >= 5.6.
+  for (size_t i= LINE_FOR_FIRST_MYSQL_5_6; i <= LINE_FOR_LAST_MYSQL_FUTURE; ++i)
+    my_b_write_byte(file, '\n');
   mi->save_to(file);
   err= flush_io_cache(file);
   if (sync_masterinfo_period && !err &&
@@ -1737,7 +1705,7 @@ void Domain_id_filter::clear_ids()
 */
 bool Domain_id_filter::update_ids(DYNAMIC_ARRAY *do_ids,
                                   DYNAMIC_ARRAY *ignore_ids,
-                                  bool using_gtid)
+                                  enum_master_use_gtid using_gtid)
 {
   bool do_list_empty, ignore_list_empty;
 
@@ -1820,43 +1788,6 @@ void Domain_id_filter::store_ids(Field ***field)
 bool Domain_id_filter::init_ids(IO_CACHE *f, enum_list_type type)
 {
   return init_dynarray_intvar_from_file(&m_domain_ids[type], f);
-}
-
-/**
-  Return the elements of the give domain id list type as string.
-
-  @param type [IN]                  domain id list type
-
-  @retval                           a string buffer storing the total number
-                                    of elements followed by the individual
-                                    elements (space-separated) in the
-                                    specified list.
-
-  Note: Its caller's responsibility to free the returned string buffer.
-*/
-char *Domain_id_filter::as_string(enum_list_type type)
-{
-  char *buf;
-  size_t sz;
-  DYNAMIC_ARRAY *ids= &m_domain_ids[type];
-
-  sz= (sizeof(ulong) * 3 + 1) * (1 + ids->elements);
-
-  if (!(buf= (char *) my_malloc(PSI_INSTRUMENT_ME, sz, MYF(MY_WME))))
-    return NULL;
-
-  // Store the total number of elements followed by the individual elements.
-  size_t cur_len= sprintf(buf, "%zu", ids->elements);
-  sz-= cur_len;
-
-  for (uint i= 0; i < ids->elements; i++)
-  {
-    ulong domain_id;
-    get_dynamic(ids, (void *) &domain_id, i);
-    cur_len+= my_snprintf(buf + cur_len, sz, " %lu", domain_id);
-    sz-= cur_len;
-  }
-  return buf;
 }
 
 void update_change_master_ids(DYNAMIC_ARRAY *new_ids, DYNAMIC_ARRAY *old_ids)

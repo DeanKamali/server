@@ -95,7 +95,7 @@ public:
             true                      Error
   */
   bool update_ids(DYNAMIC_ARRAY *do_ids, DYNAMIC_ARRAY *ignore_ids,
-                  bool using_gtid);
+                  enum_master_use_gtid using_gtid);
 
   /*
     Serialize and store the ids from domain id lists into the thd's protocol
@@ -206,7 +206,7 @@ class Master_info: public ChangeMaster, public Slave_reporting_capability
   inline const char *using_gtid_astext(enum_master_use_gtid arg)
   {
     DBUG_ASSERT(arg >= enum_master_use_gtid::DEFAULT);
-    return NAME_MASTER_USE_GTID[static_cast<char>(arg)];
+    return NAME_MASTER_USE_GTID[static_cast<unsigned char>(arg)];
   }
   bool using_parallel()
   {
@@ -256,9 +256,9 @@ class Master_info: public ChangeMaster, public Slave_reporting_capability
   */
   enum_binlog_checksum_alg checksum_alg_before_fd;
   /** pause duration between each connection retry */
-  OptionalIntConfig<::master_connect_retry> &connect_retry= master_connect_retry;
+  decltype(master_connect_retry) &connect_retry= master_connect_retry;
   /** per-slave @ref master_retry_count */
-  OptionalIntConfig<::master_retry_count> &retry_count= master_retry_count;
+  decltype(master_retry_count) &retry_count= master_retry_count;
   /** count of connects the most-recent (or the current) connection has tried */
   ulong connects_tried;
 #ifndef DBUG_OFF

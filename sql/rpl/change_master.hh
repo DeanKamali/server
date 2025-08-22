@@ -19,8 +19,6 @@
 #include <my_global.h> // FN_REFLEN
 #include <my_sys.h>    // IO_CACHE
 
-/// Trilean: Enum alternative for "optional<bool>"
-enum struct tril { NO, YES, DEFAULT= -1 };
 /// Enum for @ref ChangeMaster::master_use_gtid
 enum struct enum_master_use_gtid { NO, CURRENT_POS, SLAVE_POS, DEFAULT= -1 };
 inline const char *const NAME_MASTER_USE_GTID[]=
@@ -44,7 +42,6 @@ inline uint64_t master_retry_count= 100'000;
 /// Persistence interface for an unspecified item
 struct Persistent
 {
-  virtual ~Persistent()= default;
   inline virtual bool is_default() { return false; }
   /// @return `true` if the item is mandatory and couldn't provide a default
   inline virtual bool set_default() { return true; }
@@ -59,140 +56,167 @@ struct Persistent
   */
   virtual void save_to(IO_CACHE *file)= 0;
   inline Persistent() { set_default(); }
+  virtual ~Persistent()= default;
 };
 
+/** Struct for CHANGE MASTER configurations:
+  Each config is an instance of an implementation of the
+  @ref Persistent interface. In turn, this class's own Persistent method
+  overrides iterates over them through the local listings in `change_master.cc`.
+*/
 struct ChangeMaster: Persistent
 {
-  /**
-    @tparam T the interface type for using the configuration
-    @tparam V the storage type for @ref value if different from `T`
-  */
-  template<typename T, typename V= T> struct Config: Persistent
-  {
-    V value;
-    virtual operator T() = 0;
-    inline V &operator=(const T &value)
-      { return this->value= value; }
-    inline V &operator=(T &&value)
-      { return this->value= std::forward<T>(value); }
-    using Persistent::Persistent;
-    inline Config(T  &args): Persistent(), value(args) {}
-    inline Config(T &&args): Persistent(), value(std::forward<T>(args)) {}
-  };
-
-  /// for integers, signed or unsigned
-  template<typename T, typename V= T> struct IntConfig: Config<T, V>
-  {
-    using Config<T, V>::operator=;
-    virtual bool load_from(IO_CACHE *file) override;
-    virtual void save_to(IO_CACHE *file) override;
-  };
-
-  /** for *optional* integers
+  /** Simple Integer config with `DEFAULT`
     @see master_connect_retry
     @see master_retry_count
   */
-  template<auto &mariadbd_option,
-    typename I= std::remove_reference_t<decltype(mariadbd_option)>
-  >
-    struct OptionalIntConfig: IntConfig<I, std::optional<I>>
+  template<auto &mariadbd_option> struct OptionalIntConfig: Persistent
   {
-    inline virtual bool is_default() override
-      { return this->value.has_value(); }
-    inline virtual bool set_default() override
+    using IntType= std::remove_reference_t<decltype(mariadbd_option)>;
+    std::optional<IntType> optional;
+    inline operator IntType()
+      { return optional.value_or(mariadbd_option); }
+    inline OptionalIntConfig &operator=(IntType value)
     {
-      this->value.reset();
-      return false;
+      optional.emplace(value);
+      return *this;
     }
-    inline virtual operator I() override
-      { return this->value.value_or(mariadbd_option); }
-    using IntConfig<I, std::optional<I>>::operator=;
-  };
-
-  /// for SSL booleans
-  template<bool &mariadbd_option> struct SSLBoolConfig: IntConfig<tril>
-  {
-    inline bool is_default() override
-      { return this->value <= tril::DEFAULT; }
+    inline bool is_default() override { return optional.has_value(); }
     inline bool set_default() override
     {
-      this->value= tril::DEFAULT;
+      optional.reset();
       return false;
     }
-    inline operator tril() override
-    {
-      return this->is_default() ?
-        static_cast<tril>(mariadbd_option) : this->value;
-    }
-    inline operator bool() { return *this == tril::NO; }
-    inline tril &operator=(bool value)
-      { return *this= static_cast<tril>(value); }
-  };
-  /** for SSL paths
-    They are @ref FN_REFLEN-sized null-terminated
-    string buffers with `mariadbd` options as defaults.
-  */
-  template<const char *&mariadbd_option>
-    struct SSLPathConfig: Config<const char *, char [FN_REFLEN]>
-  {
-    bool is_default() override;
-    bool set_default() override;
-    inline operator const char *() override { return this->value; }
-    /// Does nothing if `value` is `nullptr`
-    const char *operator=(const char *value);
     bool load_from(IO_CACHE *file) override;
     void save_to(IO_CACHE *file) override;
   };
 
   /// Singleton class for @ref master_heartbeat_period
-  struct master_heartbeat_period_t: Config<float>
+  struct master_heartbeat_period_t: Persistent
   {
-    inline bool is_default() override { return this->value < 0; }
+    float period;
+    operator float();
+    inline master_heartbeat_period_t &operator=(float period)
+    {
+      DBUG_ASSERT(period >= 0);
+      this->period= period;
+      return *this;
+    }
+    inline bool is_default() override { return period < 0; }
     inline bool set_default() override
     {
-      this->value= -1.0;
+      period= -1.0;
       return false;
     }
-    operator float() override;
-    using Config<float>::operator=;
     bool load_from(IO_CACHE *file) override;
     void save_to(IO_CACHE *file) override;
   };
-  /// Singleton class for @ref master_use_gtid
-  struct master_use_gtid_t: IntConfig<enum_master_use_gtid>
+
+  /** Simple boolean config with `DEFAULT`
+    @see master_ssl
+    @see master_ssl_verify_server_cert
+  */
+  template<bool &mariadbd_option> struct OptionalBoolConfig: Persistent
   {
+    /// Trilean: Enum alternative for "optional<bool>"
+    enum tril { NO, YES, DEFAULT= -1 } value;
+    operator bool();
+    inline bool is_default() override { return value <= tril::DEFAULT; }
+    inline bool set_default() override
+    {
+      value= tril::DEFAULT;
+      return false;
+    }
+    inline OptionalBoolConfig &operator=(bool value)
+    {
+      this->value= static_cast<tril>(value);
+      return *this;
+    }
+    bool load_from(IO_CACHE *file) override;
+    void save_to(IO_CACHE *file) override;
+  };
+
+  /** for SSL paths:
+    They are @ref FN_REFLEN-sized null-terminated
+    string buffers with `mariadbd` options as defaults.
+  */
+  template<const char *&mariadbd_option>
+  struct OptionalPathConfig: Persistent
+  {
+    char path[FN_REFLEN];
+    inline operator const char *() { return path; }
+    /// Does nothing if `path` is `nullptr`
+    OptionalPathConfig &operator=(const char *path);
+    bool is_default() override;
+    bool set_default() override;
+    bool load_from(IO_CACHE *file) override;
+    void save_to(IO_CACHE *file) override;
+  };
+
+  /// Singleton class for @ref master_use_gtid
+  struct master_use_gtid_t: Persistent
+  {
+    enum_master_use_gtid mode;
     /**
       The default `master_use_gtid` is normally `SLAVE_POS`; however, if the
       master does not supports GTIDs, we fall back to `NO`. This field caches
       the check so future RESET SLAVE commands don't revert to `SLAVE_POS`.
     */
     bool gtid_supported= true;
+    operator enum_master_use_gtid();
+    inline master_use_gtid_t &operator=(enum_master_use_gtid mode)
+    {
+      this->mode= mode;
+      DBUG_ASSERT(!is_default());
+      return *this;
+    }
     inline bool is_default() override
-      { return this->value <= enum_master_use_gtid::DEFAULT; }
+      { return mode <= enum_master_use_gtid::DEFAULT; }
     inline bool set_default() override
     {
-      this->value= enum_master_use_gtid::DEFAULT;
+      mode= enum_master_use_gtid::DEFAULT;
       return false;
     }
-    operator enum_master_use_gtid() override;
-    using IntConfig<enum_master_use_gtid>::operator=;
+    /// @return `false` if the read integer is not a @ref enum_master_use_gtid
+    bool load_from(IO_CACHE *file) override;
+    void save_to(IO_CACHE *file) override;
   };
 
-  //// CHANGE MASTER entries; here in SHOW SLAVE STATUS order
+  /** for Domain ID arrays:
+    They are currently **pointers to**'s @ref DYNAMIC_ARRAY's in the
+    `Domain_id_filter`. Therefore, unlike `std::list<int32_t>`s,
+    they do not manage (construct/destruct) these arrays and have no `DEFAULT`.
+  */
+  struct IDListConfig: Persistent
+  {
+    DYNAMIC_ARRAY *list;
+    inline IDListConfig(DYNAMIC_ARRAY *list): list(list) {}
+    inline operator DYNAMIC_ARRAY *() { return list; }
+    bool load_from(IO_CACHE *file) override;
+    /// Store the total number of elements followed by the individual elements.
+    void save_to(IO_CACHE *file) override;
+  };
+
+  // CHANGE MASTER entries; here in SHOW SLAVE STATUS order
   OptionalIntConfig<::master_connect_retry> master_connect_retry;
   master_heartbeat_period_t master_heartbeat_period;
-  SSLBoolConfig<::master_ssl> master_ssl;
-  SSLPathConfig<::master_ssl_ca> master_ssl_ca;
-  SSLPathConfig<::master_ssl_capath> master_ssl_capath;
-  SSLPathConfig<::master_ssl_cert> master_ssl_cert;
-  SSLPathConfig<::master_ssl_crl> master_ssl_crl;
-  SSLPathConfig<::master_ssl_crlpath> master_ssl_crlpath;
-  SSLPathConfig<::master_ssl_key> master_ssl_key;
-  SSLPathConfig<::master_ssl_cipher> master_ssl_cipher;
-  SSLBoolConfig<::master_ssl_verify_server_cert> master_ssl_verify_server_cert;
+  OptionalBoolConfig<::master_ssl> master_ssl;
+  OptionalPathConfig<::master_ssl_ca> master_ssl_ca;
+  OptionalPathConfig<::master_ssl_capath> master_ssl_capath;
+  OptionalPathConfig<::master_ssl_cert> master_ssl_cert;
+  OptionalPathConfig<::master_ssl_crl> master_ssl_crl;
+  OptionalPathConfig<::master_ssl_crlpath> master_ssl_crlpath;
+  OptionalPathConfig<::master_ssl_key> master_ssl_key;
+  OptionalPathConfig<::master_ssl_cipher> master_ssl_cipher;
+  OptionalBoolConfig<::master_ssl_verify_server_cert>
+    master_ssl_verify_server_cert;
   master_use_gtid_t master_use_gtid;
+  IDListConfig do_domain_ids;
+  IDListConfig ignore_domain_ids;
   OptionalIntConfig<::master_retry_count> master_retry_count;
 
+  inline ChangeMaster(DYNAMIC_ARRAY m_domain_ids[2]):
+    do_domain_ids(&m_domain_ids[0]), ignore_domain_ids(&m_domain_ids[1]) {}
   /**
     Load all configs (currently, only those in the `key-value` section that
     support the `DEFAULT` keyword) from the file, stopping at the `END_MARKER`

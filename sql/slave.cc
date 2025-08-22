@@ -3333,7 +3333,7 @@ static int request_dump(THD *thd, MYSQL* mysql, Master_info* mi,
     else
       sql_print_error("Error on COM_BINLOG_DUMP: %d  %s, will retry in %d secs",
                       mysql_errno(mysql), mysql_error(mysql),
-                      mi->connect_retry);
+                      static_cast<uint32_t>(mi->master_connect_retry));
     DBUG_RETURN(1);
   }
 
@@ -6973,7 +6973,8 @@ static int connect_to_master(THD* thd, MYSQL* mysql, Master_info* mi,
                  " - retry-time: %d  maximum-retries: %lu  message: %s",
                  (reconnect ? "reconnecting" : "connecting"),
                  mi->user, mi->host, mi->port,
-                 mi->connect_retry, mi->retry_count,
+                 static_cast<uint32_t>(mi->master_connect_retry),
+                 static_cast<uint64_t>(mi->master_retry_count),
                  mysql_error(mysql));
     }
     if (++(mi->connects_tried) == mi->retry_count)

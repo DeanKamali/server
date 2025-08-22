@@ -7109,7 +7109,8 @@ static int show_heartbeat_period(THD *thd, SHOW_VAR *var, void *buff,
       get_master_info(&thd->variables.default_master_connection,
                       Sql_condition::WARN_LEVEL_NOTE))
   {
-    sprintf(static_cast<char*>(buff), "%.3f", mi->heartbeat_period);
+    sprintf(static_cast<char*>(buff), "%.3f",
+      static_cast<float>(mi->master_heartbeat_period));
     mi->release();
     var->type= SHOW_CHAR;
     var->value= buff;
