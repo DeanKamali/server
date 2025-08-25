@@ -18,7 +18,7 @@
 
 #ifdef HAVE_REPLICATION
 
-#include "rpl/change_master.hh"
+#include "change_master.ccm"
 #include "rpl_rli.h"
 #include "rpl_reporting.h"
 #include <my_sys.h>
@@ -120,21 +120,6 @@ public:
             true                      Error
   */
   bool init_ids(IO_CACHE *f, enum_list_type type);
-
-  /*
-    Return the elements of the give domain id list type as string.
-
-    @param type [IN]                  domain id list type
-
-    @retval                           a string buffer storing the total number
-                                      of elements followed by the individual
-                                      elements (space-separated) in the
-                                      specified list.
-
-    Note: Its caller's responsibility to free the returned string buffer.
-  */
-  char *as_string(enum_list_type type);
-
 };
 
 
@@ -188,7 +173,7 @@ typedef struct st_rows_event_tracker
 class Master_info: public ChangeMaster, public Slave_reporting_capability
 {
  public:
-  /// @deprecated
+  /// @deprecated use the new namespace instead
   inline static constexpr enum_master_use_gtid
     USE_GTID_NO         = enum_master_use_gtid::NO,
     USE_GTID_CURRENT_POS= enum_master_use_gtid::CURRENT_POS,

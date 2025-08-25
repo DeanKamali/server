@@ -1,0 +1,359 @@
+/*
+  Copyright (c) 2025 MariaDB
+
+  This program is free software; you can redistribute it and/or modify
+  it under the terms of the GNU General Public License as published by
+  the Free Software Foundation; version 2 of the License.
+
+  This program is distributed in the hope that it will be useful,
+  but WITHOUT ANY WARRANTY; without even the implied warranty of
+  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+  See the GNU General Public License for more details.
+
+  You should have received a copy of the GNU General Public License along
+  with this program; if not, write to the Free Software Foundation, Inc.,
+  51 Franklin St, Fifth Floor, Boston, MA 02110-1335 USA.
+*/
+
+/** @ref ChangeMaster, the CHANGE MASTER struct:
+  The struct is implemented with C++ templates, but templates are not suitable
+  for the header/implementation split. Because of that, this file is mostly a
+  header-only unit (both declaring constructs and implementing them `inline`).
+  Other files may include this file directly,
+  though headers should include this under their `#include` guards.
+  [C++20 modules](https://en.cppreference.com/w/cpp/language/modules.html)
+  can supercede headers and their `#include` guards.
+*/
+
+#include <optional>    // Storage type of @ref OptionalIntConfig
+#include <charconv>    // std::from/to_chars and other helpers
+#include <my_global.h> // FN_REFLEN
+#include <my_sys.h>    // IO_CACHE
+#include "slave.h"    // init_str/float/dynarray_int_var_from_file
+
+
+/// Enum for @ref ChangeMaster::master_use_gtid
+enum struct enum_master_use_gtid { NO, CURRENT_POS, SLAVE_POS, DEFAULT= -1 };
+inline const char *const NAME_MASTER_USE_GTID[]=
+  {"No", "Current_Pos", "Slave_Pos", nullptr};
+
+// `mariadbd` Options for @ref ChangeMaster::WithDefault
+inline uint32_t master_connect_retry= 60;
+inline float master_heartbeat_period= -1.0;
+inline bool master_ssl= true;
+inline const char *master_ssl_ca     = "";
+inline const char *master_ssl_capath = "";
+inline const char *master_ssl_cert   = "";
+inline const char *master_ssl_crl    = "";
+inline const char *master_ssl_crlpath= "";
+inline const char *master_ssl_key    = "";
+inline const char *master_ssl_cipher = "";
+inline bool master_ssl_verify_server_cert= true;
+inline auto master_use_gtid= enum_master_use_gtid::DEFAULT;
+inline uint64_t master_retry_count= 100'000;
+
+/// Persistence interface for an unspecified item
+struct Persistent
+{
+  virtual bool is_default() { return false; }
+  /// @return `true` if the item is mandatory and couldn't provide a default
+  virtual bool set_default() { return true; }
+  /** set the value by reading a line from the IO and consume the `\n`
+    @return `false` if successful or `true` if error
+    @post is_default() is `false`
+  */
+  virtual bool load_from(IO_CACHE *file)= 0;
+  /** write the *effective* value to the IO **without** a `\n`
+    (The caller will separately determine how
+     to represent using the default value.)
+  */
+  virtual void save_to(IO_CACHE *file)= 0;
+  Persistent() { set_default(); }
+  virtual ~Persistent()= default;
+};
+
+
+/** Struct for CHANGE MASTER configurations:
+  Each config is an instance of an implementation of the
+  @ref Persistent interface. In turn, this class's own Persistent method
+  overrides iterates over them through the local listings in `change_master.cc`.
+*/
+class ChangeMaster: public Persistent
+{
+
+  /** Number of fully-utilized decimal digits plus
+    * the partially-utilized digit (e.g., the 2's place in "2147483647")
+    * The sign (:
+  */
+  template<typename I> static constexpr size_t int_buf_size=
+    std::numeric_limits<I>::digits10 + 2;
+  static constexpr auto OK= std::errc();
+
+  /** @ref IO_CACHE version of std::from_chars()
+    @tparam I signed or unsigned integer type
+    @return `false` if successful or `true` if error
+  */
+  template<typename I> static bool from_chars(IO_CACHE *file, I &value)
+  {
+    /*
+      The `\0` is not required for std::from_chars(),
+      but my_b_gets() includes it.
+    */
+    char buf[int_buf_size<I> + 1];
+    size_t size= my_b_gets(file, buf, int_buf_size<I> + 1);
+    return (!size || std::from_chars(buf, &buf[size], value).ec != OK);
+  }
+  /** Helper overload for from_chars(IO_CACHE *, I &) for `operator=` types */
+  template<typename I, typename T>
+  static bool from_chars(IO_CACHE *file, T &self)
+  {
+    I value;
+    if (from_chars(file, value))
+      return true;
+    self= value;
+    return false;
+  }
+  /** @ref IO_CACHE version of std::to_chars()
+    @tparam I signed or unsigned integer type
+  */
+  template<typename I> static void to_chars(IO_CACHE *file, I value)
+  {
+    /*
+      my_b_printf() uses a buffer too,
+      so we might as well skip its format parsing step
+    */
+    char buf[int_buf_size<I>];
+    auto &&[end, ec]= std::to_chars(buf, &buf[int_buf_size<I>], value);
+    DBUG_ASSERT(ec == OK);
+    my_b_write(file, (const uchar *)buf, end - buf);
+  }
+
+
+public:
+
+  /** Simple Integer config with `DEFAULT`
+    @see master_connect_retry
+    @see master_retry_count
+  */
+  template<auto &mariadbd_option> struct OptionalIntConfig: Persistent
+  {
+    using IntType= std::remove_reference_t<decltype(mariadbd_option)>;
+    std::optional<IntType> optional;
+    operator IntType() { return optional.value_or(mariadbd_option); }
+    OptionalIntConfig &operator=(IntType value)
+    {
+      optional.emplace(value);
+      return *this;
+    }
+    bool is_default() override { return optional.has_value(); }
+    bool set_default() override
+    {
+      optional.reset();
+      return false;
+    }
+    /// zero and 64-bit capable version of init_intvar_from_file()
+    bool load_from(IO_CACHE *file) override
+      { return from_chars<IntType>(file, *this); }
+    void save_to(IO_CACHE *file) override
+      { return to_chars<IntType>(file, *this); }
+  };
+
+  /** Simple boolean config with `DEFAULT`
+    @see master_ssl
+    @see master_ssl_verify_server_cert
+  */
+  template<bool &mariadbd_option> struct OptionalBoolConfig: Persistent
+  {
+    /// Trilean: Enum alternative for "optional<bool>"
+    enum tril { NO, YES, DEFAULT= -1 } value;
+    operator bool() { return is_default() ? mariadbd_option : (value != NO); }
+    bool is_default() override { return value <= tril::DEFAULT; }
+    bool set_default() override
+    {
+      value= tril::DEFAULT;
+      return false;
+    }
+    OptionalBoolConfig &operator=(bool value)
+    {
+      this->value= static_cast<tril>(value);
+      return *this;
+    }
+    bool load_from(IO_CACHE *file) override
+      { return from_chars<unsigned char>(file, *this); }
+    void save_to(IO_CACHE *file) override
+      { return to_chars<unsigned char>(file, *this); }
+  };
+
+  /** for SSL paths:
+    They are @ref FN_REFLEN-sized null-terminated
+    string buffers with `mariadbd` options as defaults.
+  */
+  template<const char *&mariadbd_option>
+  struct OptionalPathConfig: Persistent
+  {
+    char path[FN_REFLEN];
+    operator const char *()
+    {
+      if (is_default())
+        return mariadbd_option;
+      return path;
+    }
+    /// Does nothing if `path` is `nullptr`
+    OptionalPathConfig<mariadbd_option> &operator=(const char *path)
+    {
+      if (path) // not `nullptr`
+      {
+        this->path[1]= false; // not default
+        strmake_buf(this->path, path);
+      }
+      return *this;
+    }
+    bool is_default() override
+      { return !path[0] && path[1]; }
+    bool set_default() override
+    {
+      path[0]= false;
+      path[1]= true;
+      return false;
+    }
+    bool load_from(IO_CACHE *file) override
+    {
+      path[1]= false; // not default
+      return init_strvar_from_file(path, FN_REFLEN, file, nullptr);
+    }
+    void save_to(IO_CACHE *file) override
+    {
+      const char *path= *this;
+      my_b_write(file, (const uchar *)path, strlen(path));
+    }
+  };
+
+  /** for Domain ID arrays:
+    They are currently **pointers to**'s @ref DYNAMIC_ARRAY's in the
+    `Domain_id_filter`. Therefore, unlike `std::list<int32_t>`s,
+    they do not manage (construct/destruct) these arrays and have no `DEFAULT`.
+  */
+  struct IDListConfig: Persistent
+  {
+    DYNAMIC_ARRAY *list;
+    IDListConfig(DYNAMIC_ARRAY *list): list(list) {}
+    operator DYNAMIC_ARRAY *() { return list; }
+    bool load_from(IO_CACHE *file) override
+      { return init_dynarray_intvar_from_file(list, file); }
+    /** Store the total number of elements followed by the individual elements.
+      Unlike the old `Domain_id_filter::as_string()`,
+      this implementation does not require allocating the heap temporarily.
+    */
+    void save_to(IO_CACHE *file) override
+    {
+      to_chars(file, list->elements);
+      for (size_t i= 0; i < list->elements; ++i)
+      {
+        int32_t id;
+        get_dynamic(list, &id, i);
+        my_b_write_byte(file, ' ');
+        to_chars(file, id);
+      }
+    }
+  };
+
+
+  /*
+    Implementations of the rest of this file are split
+    to `change_master.cc` to reduce the cognitive load.
+  */
+
+  /**
+    CHANGE MASTER entries; here in SHOW SLAVE STATUS order
+    @{
+  */
+
+  //struct: OptionalIntConfig<uint32_t>
+  OptionalIntConfig<::master_connect_retry> master_connect_retry;
+
+  struct master_heartbeat_period_t: Persistent
+  {
+    float period;
+    operator float();
+    master_heartbeat_period_t &operator=(float period)
+    {
+      DBUG_ASSERT(period >= 0);
+      this->period= period;
+      return *this;
+    }
+    inline bool is_default() override { return period < 0; }
+    inline bool set_default() override
+    {
+      period= -1.0;
+      return false;
+    }
+    bool load_from(IO_CACHE *file) override;
+    void save_to(IO_CACHE *file) override;
+  } master_heartbeat_period;
+
+  OptionalBoolConfig<::master_ssl> master_ssl;
+
+  OptionalPathConfig<::master_ssl_ca> master_ssl_ca;
+  OptionalPathConfig<::master_ssl_capath> master_ssl_capath;
+  OptionalPathConfig<::master_ssl_cert> master_ssl_cert;
+  OptionalPathConfig<::master_ssl_cipher> master_ssl_cipher;
+  OptionalPathConfig<::master_ssl_key> master_ssl_key;
+  OptionalBoolConfig<::master_ssl_verify_server_cert>
+    master_ssl_verify_server_cert;
+  OptionalPathConfig<::master_ssl_crl> master_ssl_crl;
+  OptionalPathConfig<::master_ssl_crlpath> master_ssl_crlpath;
+
+  struct master_use_gtid_t: Persistent
+  {
+    enum_master_use_gtid mode;
+    /**
+      The default `master_use_gtid` is normally `SLAVE_POS`; however, if the
+      master does not supports GTIDs, we fall back to `NO`. This field caches
+      the check so future RESET SLAVE commands don't revert to `SLAVE_POS`.
+    */
+    bool gtid_supported= true;
+    operator enum_master_use_gtid();
+    inline master_use_gtid_t &operator=(enum_master_use_gtid mode)
+    {
+      this->mode= mode;
+      DBUG_ASSERT(!is_default());
+      return *this;
+    }
+    inline bool is_default() override
+      { return mode <= enum_master_use_gtid::DEFAULT; }
+    inline bool set_default() override
+    {
+      mode= enum_master_use_gtid::DEFAULT;
+      return false;
+    }
+    /// @return `false` if the read integer is not a @ref enum_master_use_gtid
+    bool load_from(IO_CACHE *file) override;
+    void save_to(IO_CACHE *file) override;
+  } master_use_gtid;
+
+  IDListConfig do_domain_ids;
+  IDListConfig ignore_domain_ids;
+  OptionalIntConfig<::master_retry_count> master_retry_count;
+
+
+  /**
+    }@
+    Methods for @ref ChangeMaster itself:
+    @{
+  */
+
+  ChangeMaster(DYNAMIC_ARRAY m_domain_ids[2]);
+
+  /**
+    Load all configs (currently, only those in the `key-value` section that
+    support the `DEFAULT` keyword) from the file, stopping at the `END_MARKER`
+  */
+  bool load_from(IO_CACHE *file) override;
+  /**
+    Save all configs (currently, only those in the `key-value` section that
+    support the `DEFAULT` keyword), to the file, including the `END_MARKER`
+  */
+  void save_to(IO_CACHE *file) override;
+
+  /// }@
+};

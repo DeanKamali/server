@@ -15,64 +15,10 @@
   51 Franklin St, Fifth Floor, Boston, MA 02110-1335 USA.
 */
 
-#include "change_master.hh"
+#include "change_master.ccm"
 #include <string_view>   // Key type of @ref MASTER_INFO_MAP
 #include <unordered_map> // Type of @ref MASTER_INFO_MAP
 #include <unordered_set> // seen set in `load_from()`
-#include <charconv>      // std::from/to_chars
-#include "../slave.h"    // init_str/float/dynarray_int_var_from_file
-
-/** Number of fully-utilized decimal digits plus
-  * the partially-utilized digit (e.g., the 2's place in "2147483647")
-  * The sign (:
-*/
-template<typename I> static constexpr size_t int_buf_size=
-  std::numeric_limits<I>::digits10 + 2;
-static constexpr auto OK= std::errc();
-/** @ref IO_CACHE version of std::from_chars()
-  @tparam I signed or unsigned integer type
-  @return `false` if successful or `true` if error
-*/
-
-template<typename I> bool from_chars(IO_CACHE *file, I &value)
-{
-  // The `\0` is not required in std::from_chars(), but my_b_gets() includes it.
-  char buf[int_buf_size<I> + 1];
-  size_t size= my_b_gets(file, buf, int_buf_size<I> + 1);
-  return (!size || std::from_chars(buf, &buf[size], value).ec != OK);
-}
-template<typename I, typename T> bool from_chars(IO_CACHE *file, T &self)
-{
-  I value;
-  if (from_chars(file, value))
-    return true;
-  self= std::move(value);
-  return false;
-}
-/** @ref IO_CACHE version of std::to_chars()
-  @tparam I signed or unsigned integer type
-*/
-template<typename I> void to_chars(IO_CACHE *file, I value)
-{
-  /*
-    my_b_printf() uses a buffer too,
-    so we might as well skip its format parsing step
-  */
-  char buf[int_buf_size<I>];
-  std::to_chars_result to_chars_result=
-    std::to_chars(buf, &buf[int_buf_size<I>], value);
-  DBUG_ASSERT(to_chars_result.ec == OK);
-  my_b_write(file, (const uchar *)buf, int_buf_size<I>);
-}
-
-
-/// zero and 64-bit capable version of init_intvar_from_file()
-template<auto &_opt>
-bool ChangeMaster::OptionalIntConfig<_opt>::load_from(IO_CACHE *file)
-  { return from_chars<IntType>(file, *this); }
-template<auto &_opt>
-void ChangeMaster::OptionalIntConfig<_opt>::save_to(IO_CACHE *file)
-  { return to_chars(file, *this); }
 
 ChangeMaster::master_heartbeat_period_t::operator float()
 {
@@ -89,50 +35,6 @@ void ChangeMaster::master_heartbeat_period_t::save_to(IO_CACHE *file)
   char buf[FLOATING_POINT_BUFFER];
   size_t size= my_fcvt(*this, 3, buf, nullptr);
   my_b_write(file, (const uchar *)buf, size);
-}
-
-template<bool &mariadbd_option>
-ChangeMaster::OptionalBoolConfig<mariadbd_option>::operator bool()
-  { return is_default() ? mariadbd_option : (value != NO); }
-template<bool &_opt>
-bool ChangeMaster::OptionalBoolConfig<_opt>::load_from(IO_CACHE *file)
-  { return from_chars<unsigned char>(file, *this); }
-template<bool &_opt>
-void ChangeMaster::OptionalBoolConfig<_opt>::save_to(IO_CACHE *file)
-  { return to_chars<unsigned char>(file, *this); }
-
-template<const char *&_opt>
-ChangeMaster::OptionalPathConfig<_opt> &
-ChangeMaster::OptionalPathConfig<_opt>::operator=(const char *value)
-{
-  if (value) // not `nullptr`
-  {
-    path[1]= false; // not default
-    strmake_buf(path, value);
-  }
-  return *this;
-}
-template<const char *&_opt>
-bool ChangeMaster::OptionalPathConfig<_opt>::is_default()
-  { return !path[0] && path[1]; }
-template<const char *&_opt>
-bool ChangeMaster::OptionalPathConfig<_opt>::set_default()
-{
-  path[0]= false;
-  path[1]= true;
-  return false;
-}
-template<const char *&_opt>
-bool ChangeMaster::OptionalPathConfig<_opt>::load_from(IO_CACHE *file)
-{
-  path[1]= false; // not default
-  return init_strvar_from_file(path, FN_REFLEN, file, nullptr);
-}
-template<const char *&_opt>
-void ChangeMaster::OptionalPathConfig<_opt>::save_to(IO_CACHE *file)
-{
-  const char *path= *this;
-  my_b_write(file, (const uchar *)path, strlen(path));
 }
 
 ChangeMaster::master_use_gtid_t::operator enum_master_use_gtid()
@@ -161,25 +63,6 @@ void ChangeMaster::master_use_gtid_t::save_to(IO_CACHE *file)
     static_cast<enum_master_use_gtid>(*this))
   );
 }
-
-bool ChangeMaster::IDListConfig::load_from(IO_CACHE *file)
-  { return init_dynarray_intvar_from_file(list, file); }
-/**
-  Unlike the old `Domain_id_filter::as_string()`,
-  this implementation does not require allocating the heap temporarily.
-*/
-void ChangeMaster::IDListConfig::save_to(IO_CACHE *file)
-{
-  to_chars(file, list->elements);
-  for (size_t i= 0; i < list->elements; ++i)
-  {
-    int32_t id;
-    get_dynamic(list, &id, i);
-    my_b_write_byte(file, ' ');
-    to_chars(file, id);
-  }
-}
-
 
 /**
   Guard agaist extra left-overs at the end of file,
@@ -226,6 +109,14 @@ static const std::unordered_map<std::string_view, mem_fn> MASTER_INFO_MAP({
   {END_MARKER, mem_fn()}
 });
 
+ChangeMaster::ChangeMaster(DYNAMIC_ARRAY m_domain_ids[2]):
+  do_domain_ids(&m_domain_ids[0]), ignore_domain_ids(&m_domain_ids[1])
+{
+  for(auto &[_, member]: MASTER_INFO_MAP)
+    if (static_cast<bool>(member.get))
+      member.get(this).set_default();
+}
+
 /// Repurpose the trailing `\0` spot to prepare for the `=` or `\n`
 static constexpr size_t MAX_KEY_SIZE= sizeof("ssl_verify_server_cert");
 static const decltype(MASTER_INFO_MAP)::const_iterator KEY_NOT_FOUND=
@@ -253,7 +144,7 @@ bool ChangeMaster::load_from(IO_CACHE *file)
         return true;
       case '=':
         found_equal= true;
-      // fall-through
+      [[fallthrough]];
       case '\n':
       {
         decltype(MASTER_INFO_MAP)::const_iterator found_kv=

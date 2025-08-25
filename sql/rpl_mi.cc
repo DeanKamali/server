@@ -570,6 +570,7 @@ int flush_master_info(Master_info* mi,
                       bool need_lock_relay_log)
 {
   IO_CACHE* file = &mi->file;
+  char lbuf[22]; ///< my_b_printf() does not support the `ll` size.
   int err= 0;
 
   DBUG_ENTER("flush_master_info");
@@ -626,24 +627,6 @@ int flush_master_info(Master_info* mi,
     }
   }
 
-  char *do_domain_ids_buf= 0, *ignore_domain_ids_buf= 0;
-
-  do_domain_ids_buf=
-    mi->domain_id_filter.as_string(Domain_id_filter::DO_DOMAIN_IDS);
-  if (do_domain_ids_buf == NULL)
-  {
-    err= 1;                                     /* error */
-    goto done;
-  }
-
-  ignore_domain_ids_buf=
-    mi->domain_id_filter.as_string(Domain_id_filter::IGNORE_DOMAIN_IDS);
-  if (ignore_domain_ids_buf == NULL)
-  {
-    err= 1;                                     /* error */
-    goto done;
-  }
-
   /*
     We flushed the relay log BEFORE the master.info file, because if we crash
     now, we will get a duplicate event in the relay log at restart. If we
@@ -663,7 +646,7 @@ int flush_master_info(Master_info* mi,
   my_b_seek(file, 0L);
   my_b_printf(file, "%u\n%s\n%llu\n%s\n%s\n%s\n%d\n",
               LINES_IN_MASTER_INFO,
-              mi->master_log_name, mi->master_log_pos,
+              mi->master_log_name, llstr(mi->master_log_pos, lbuf),
               mi->host, mi->user, mi->password, mi->port);
   mi->master_connect_retry         .save_to(file); my_b_write_byte(file, '\n');
   mi->master_ssl                   .save_to(file); my_b_write_byte(file, '\n');
@@ -692,11 +675,7 @@ int flush_master_info(Master_info* mi,
 
   /* Fix err; flush_io_cache()/my_sync() may return -1 */
   err= (err != 0) ? 1 : 0;
-
-done:
   my_free(ignore_server_ids_buf);
-  my_free(do_domain_ids_buf);
-  my_free(ignore_domain_ids_buf);
   DBUG_RETURN(err);
 }
 
