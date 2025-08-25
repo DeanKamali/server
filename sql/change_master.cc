@@ -52,7 +52,7 @@ bool ChangeMaster::master_use_gtid_t::load_from(IO_CACHE *file)
   use_gtid_t value;
   if (from_chars(file, value) ||
       value > static_cast<use_gtid_t>(enum_master_use_gtid::SLAVE_POS) ||
-      value < static_cast<use_gtid_t>(enum_master_use_gtid::CURRENT_POS))
+      value < static_cast<use_gtid_t>(enum_master_use_gtid::NO))
     return true;
   *this= static_cast<enum_master_use_gtid>(value);
   return false;
@@ -214,6 +214,7 @@ void ChangeMaster::save_to(IO_CACHE *file)
       my_b_write_byte(file, '\n');
     }
   }
-  my_b_write(file, (const uchar *)END_MARKER, sizeof(END_MARKER));
+  my_b_write(file, (const uchar *)END_MARKER,
+             sizeof(END_MARKER) - /* the '\0' */ 1);
   my_b_write_byte(file, '\n');
 }

@@ -644,7 +644,7 @@ int flush_master_info(Master_info* mi,
      of file we don't care about this garbage.
   */
   my_b_seek(file, 0L);
-  my_b_printf(file, "%u\n%s\n%llu\n%s\n%s\n%s\n%d\n",
+  my_b_printf(file, "%u\n%s\n%s\n%s\n%s\n%s\n%d\n",
               LINES_IN_MASTER_INFO,
               mi->master_log_name, llstr(mi->master_log_pos, lbuf),
               mi->host, mi->user, mi->password, mi->port);

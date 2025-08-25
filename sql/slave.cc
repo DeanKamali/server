@@ -2078,7 +2078,7 @@ when it try to get the value of TIME_ZONE global variable from master.";
        the period is an ulonglong of nano-secs. 
     */
     my_snprintf(query, sizeof(query), query_format,
-                static_cast<ulonglong>(heartbeat_period*1000000000ULL));
+                static_cast<ulonglong>(heartbeat_period*1'000'000'000ULL));
 
     DBUG_EXECUTE_IF("simulate_slave_heartbeat_network_error",
                     { static ulong dbug_count= 0;

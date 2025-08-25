@@ -249,7 +249,8 @@ public:
       to_chars(file, list->elements);
       for (size_t i= 0; i < list->elements; ++i)
       {
-        int32_t id;
+        /// matches the type of the array (FIXME: Wasn't Domain ID `uint32_t`?)
+        ulong id;
         get_dynamic(list, &id, i);
         my_b_write_byte(file, ' ');
         to_chars(file, id);
