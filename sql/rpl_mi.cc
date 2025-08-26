@@ -26,8 +26,6 @@
 
 #ifdef HAVE_REPLICATION
 
-#define DEFAULT_CONNECT_RETRY 60
-
 static void init_master_log_pos(Master_info* mi);
 
 Master_info::Master_info(LEX_CSTRING *connection_name_arg,

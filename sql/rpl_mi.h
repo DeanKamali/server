@@ -191,7 +191,7 @@ class Master_info: public ChangeMaster, public Slave_reporting_capability
   inline const char *using_gtid_astext(enum_master_use_gtid arg)
   {
     DBUG_ASSERT(arg >= enum_master_use_gtid::DEFAULT);
-    return NAME_MASTER_USE_GTID[static_cast<unsigned char>(arg)];
+    return master_use_gtid_names[static_cast<unsigned char>(arg)];
   }
   bool using_parallel()
   {
