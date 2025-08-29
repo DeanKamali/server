@@ -25,11 +25,12 @@
   can supercede headers and their `#include` guards.
 */
 
-#include <optional>    // Storage type of @ref OptionalIntConfig
-#include <charconv>    // std::from/to_chars and other helpers
-#include <my_global.h> // FN_REFLEN
-#include <my_sys.h>    // IO_CACHE
-#include "slave.h"     // init_str/float/dynarray_int_var_from_file
+#include <optional>      // Storage type of @ref OptionalIntConfig
+#include <unordered_set> // Parameter type of ChangeMaster::set_defaults()
+#include <charconv>      // std::from/to_chars and other helpers
+#include <my_global.h>   // FN_REFLEN
+#include <my_sys.h>      // IO_CACHE
+#include "slave.h"       // init_str/float/dynarray_int_var_from_file
 
 
 /// Enum for @ref ChangeMaster::master_use_gtid
@@ -368,6 +369,15 @@ public:
     support the `DEFAULT` keyword), to the file, including the `END_MARKER`
   */
   void save_to(IO_CACHE *file) override;
+
+  /** Parser interface: Call Persistent::set_default() on the listed configs
+    @param configs
+      Set of keys as in the MariaDB `key=value` section of `@@master_info_file`
+      (E.g., `using_gtid` for @ref master_use_gtid)
+    @throw std::out_of_range if a key is not found
+      (This method is not meant for arbitrary user input.)
+  */
+  void set_defaults(const std::unordered_set<const char *> &&configs);
 
   /// }@
 };

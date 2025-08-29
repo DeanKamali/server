@@ -2314,11 +2314,11 @@ master_def:
           {
             Lex->mi.port = $3;
           }
-        | MASTER_CONNECT_RETRY_SYM '=' ulong_num
+        | MASTER_CONNECT_RETRY_SYM '=' ulong_num //
           {
             Lex->mi.connect_retry = $3;
           }
-        | MASTER_RETRY_COUNT_SYM '=' ulong_num
+        | MASTER_RETRY_COUNT_SYM '=' ulong_num //
           {
             Lex->mi.retry_count = $3;
           }
@@ -2332,46 +2332,46 @@ master_def:
             else
               Lex->mi.sql_delay = $3;
           }
-        | MASTER_SSL_SYM '=' ulong_num
+        | MASTER_SSL_SYM '=' ulong_num //
           {
             Lex->mi.ssl= $3 ? 
               LEX_MASTER_INFO::LEX_MI_ENABLE : LEX_MASTER_INFO::LEX_MI_DISABLE;
           }
-        | MASTER_SSL_CA_SYM '=' TEXT_STRING_sys
+        | MASTER_SSL_CA_SYM '=' TEXT_STRING_sys //
           {
             Lex->mi.ssl_ca= $3.str;
           }
-        | MASTER_SSL_CAPATH_SYM '=' TEXT_STRING_sys
+        | MASTER_SSL_CAPATH_SYM '=' TEXT_STRING_sys //
           {
             Lex->mi.ssl_capath= $3.str;
           }
-        | MASTER_SSL_CERT_SYM '=' TEXT_STRING_sys
+        | MASTER_SSL_CERT_SYM '=' TEXT_STRING_sys //
           {
             Lex->mi.ssl_cert= $3.str;
           }
-        | MASTER_SSL_CIPHER_SYM '=' TEXT_STRING_sys
+        | MASTER_SSL_CIPHER_SYM '=' TEXT_STRING_sys //
           {
             Lex->mi.ssl_cipher= $3.str;
           }
-        | MASTER_SSL_KEY_SYM '=' TEXT_STRING_sys
+        | MASTER_SSL_KEY_SYM '=' TEXT_STRING_sys //
           {
             Lex->mi.ssl_key= $3.str;
           }
-        | MASTER_SSL_VERIFY_SERVER_CERT_SYM '=' ulong_num
+        | MASTER_SSL_VERIFY_SERVER_CERT_SYM '=' ulong_num //
           {
             Lex->mi.ssl_verify_server_cert= $3 ?
               LEX_MASTER_INFO::LEX_MI_ENABLE : LEX_MASTER_INFO::LEX_MI_DISABLE;
           }
-        | MASTER_SSL_CRL_SYM '=' TEXT_STRING_sys
+        | MASTER_SSL_CRL_SYM '=' TEXT_STRING_sys //
           {
             Lex->mi.ssl_crl= $3.str;
           }
-        | MASTER_SSL_CRLPATH_SYM '=' TEXT_STRING_sys
+        | MASTER_SSL_CRLPATH_SYM '=' TEXT_STRING_sys //
           {
             Lex->mi.ssl_crlpath= $3.str;
           }
 
-        | MASTER_HEARTBEAT_PERIOD_SYM '=' NUM_literal
+        | MASTER_HEARTBEAT_PERIOD_SYM '=' NUM_literal //
           {
             Lex->mi.heartbeat_period= (float) $3->val_real();
             if (unlikely(Lex->mi.heartbeat_period >
@@ -2484,19 +2484,19 @@ master_file_def:
             /* Adjust if < BIN_LOG_HEADER_SIZE (same comment as Lex->mi.pos) */
             Lex->mi.relay_log_pos= MY_MAX(BIN_LOG_HEADER_SIZE, Lex->mi.relay_log_pos);
           }
-        | MASTER_USE_GTID_SYM '=' CURRENT_POS_SYM
+        | MASTER_USE_GTID_SYM '=' CURRENT_POS_SYM //
           {
             if (unlikely(Lex->mi.use_gtid_opt != LEX_MASTER_INFO::LEX_GTID_UNCHANGED))
               my_yyabort_error((ER_DUP_ARGUMENT, MYF(0), "MASTER_use_gtid"));
             Lex->mi.use_gtid_opt= LEX_MASTER_INFO::LEX_GTID_CURRENT_POS;
           }
-        | MASTER_USE_GTID_SYM '=' SLAVE_POS_SYM
+        | MASTER_USE_GTID_SYM '=' SLAVE_POS_SYM //
           {
             if (unlikely(Lex->mi.use_gtid_opt != LEX_MASTER_INFO::LEX_GTID_UNCHANGED))
               my_yyabort_error((ER_DUP_ARGUMENT, MYF(0), "MASTER_use_gtid"));
             Lex->mi.use_gtid_opt= LEX_MASTER_INFO::LEX_GTID_SLAVE_POS;
           }
-        | MASTER_USE_GTID_SYM '=' NO_SYM
+        | MASTER_USE_GTID_SYM '=' NO_SYM //
           {
             if (unlikely(Lex->mi.use_gtid_opt != LEX_MASTER_INFO::LEX_GTID_UNCHANGED))
               my_yyabort_error((ER_DUP_ARGUMENT, MYF(0), "MASTER_use_gtid"));

@@ -18,7 +18,6 @@
 #include "change_master.ccm"
 #include <string_view>   // Key type of @ref MASTER_INFO_MAP
 #include <unordered_map> // Type of @ref MASTER_INFO_MAP
-#include <unordered_set> // seen set in `load_from()`
 
 ChangeMaster::master_heartbeat_period_t::operator float()
 {
@@ -219,4 +218,14 @@ void ChangeMaster::save_to(IO_CACHE *file)
   my_b_write(file, (const uchar *)END_MARKER,
              sizeof(END_MARKER) - /* the '\0' */ 1);
   my_b_write_byte(file, '\n');
+}
+
+void
+ChangeMaster::set_defaults(const std::unordered_set<const char *> &&configs)
+{
+  for (const char *key: configs)
+  {
+    Persistent &config= MASTER_INFO_MAP.at(key)(this);
+    DBUG_ASSERT(config.set_default());
+  }
 }
