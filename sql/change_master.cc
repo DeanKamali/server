@@ -75,12 +75,13 @@ static constexpr const char END_MARKER[]= "END_MARKER";
   std::mem_fn()-like replacement for
   [member pointer upcasting](https://wg21.link/P0149R3)
 */
-struct mem_fn
+struct mem_fn: std::function<Persistent &(ChangeMaster *connection)>
 {
-  std::function<Persistent &(ChangeMaster *connection)> get;
-  mem_fn(): get() {}
+  mem_fn(): std::function<Persistent &(ChangeMaster *)>() {}
   template<typename M> mem_fn(M ChangeMaster::* pm):
-    get([pm](ChangeMaster *self) -> Persistent & { return self->*pm; }) {}
+    std::function<Persistent &(ChangeMaster *)>(
+      [pm](ChangeMaster *self) -> Persistent & { return self->*pm; }
+    ) {}
 };
 /// An iterable for the `key=value` section of `@@master_info_file`
 // C++ default allocator to match that `mysql_execute_command()` uses `new`
@@ -114,8 +115,8 @@ ChangeMaster::ChangeMaster(DYNAMIC_ARRAY m_domain_ids[2]):
   do_domain_ids(&m_domain_ids[0]), ignore_domain_ids(&m_domain_ids[1])
 {
   for(auto &[_, member]: MASTER_INFO_MAP)
-    if (static_cast<bool>(member.get))
-      member.get(this).set_default();
+    if (static_cast<bool>(member))
+      member(this).set_default();
 }
 
 /// Repurpose the trailing `\0` spot to prepare for the `=` or `\n`
@@ -125,11 +126,11 @@ static const decltype(MASTER_INFO_MAP)::const_iterator KEY_NOT_FOUND=
 
 bool ChangeMaster::load_from(IO_CACHE *file)
 {
-  /*
+  /**
     10.0 does not have the `END_MARKER` before any left-overs at the
     end of the file. So ignore any but the first occurrence of a key.
   */
-  std::unordered_set<const char *> seen{};
+  auto seen= std::unordered_set<const char *>();
   /* Parse additional `key=value` lines:
     The "value" can then be parsed individually after consuming the`key=`.
   */
@@ -161,7 +162,7 @@ bool ChangeMaster::load_from(IO_CACHE *file)
             return false;
           else if (seen.insert(key).second) // if no previous insertion
           {
-            Persistent &config= found_kv->second.get(this);
+            Persistent &config= found_kv->second(this);
             /*
               Keys that support saving the `DEFAULT` will represent the
               `DEFAULT` by omitting the `=value` part; though here we allow
@@ -209,7 +210,7 @@ void ChangeMaster::save_to(IO_CACHE *file)
   for (auto &[key, member]: MASTER_INFO_MAP)
   {
     // The others only need to save a key to mark that they're set to `DEFAULT`.
-    if (static_cast<bool>(member.get) && member.get(this).is_default())
+    if (static_cast<bool>(member) && member(this).is_default())
     {
       my_b_write(file, (const uchar *)key.data(), key.size());
       my_b_write_byte(file, '\n');

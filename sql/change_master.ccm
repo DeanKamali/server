@@ -29,7 +29,7 @@
 #include <charconv>    // std::from/to_chars and other helpers
 #include <my_global.h> // FN_REFLEN
 #include <my_sys.h>    // IO_CACHE
-#include "slave.h"    // init_str/float/dynarray_int_var_from_file
+#include "slave.h"     // init_str/float/dynarray_int_var_from_file
 
 
 /// Enum for @ref ChangeMaster::master_use_gtid
