@@ -56,7 +56,7 @@ public:
 
   enum enum_kind
   {
-    SCHEDULE_EVENT, TRIGGER_EVENT
+    SCHEDULE_EVENT= 1, SYS_TRG_ON_STARTUP= 2, SYS_TRG_ON_SHUTDOWN= 4
   };
 
   int on_completion;

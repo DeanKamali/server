@@ -119,6 +119,7 @@
 #include "sp_rcontext.h"
 #include "sp_cache.h"
 #include "sql_reload.h"  // reload_acl_and_cache
+#include "sql_sys_or_ddl_trigger.h"
 #include "sp_head.h"  // init_sp_psi_keys
 #include "log_cache.h"
 #include <mysqld_default_groups.h>
@@ -5736,18 +5737,6 @@ static void test_lc_time_sz()
 }
 #endif//DBUG_OFF
 
-static void run_after_startup_triggers()
-{
-  if (opt_bootstrap)
-    return;
-}
-
-static void run_before_shutdown_triggers()
-{
-  if (opt_bootstrap)
-    return;
-}
-
 static void run_main_loop()
 {
   select_thread=pthread_self();
@@ -6169,7 +6158,8 @@ int mysqld_main(int argc, char **argv)
   }
 #endif
 
-  run_after_startup_triggers();
+  if (run_after_startup_triggers())
+    unireg_abort(1);
 
   /* Signal threads waiting for server to be started */
   mysql_mutex_lock(&LOCK_server_started);
