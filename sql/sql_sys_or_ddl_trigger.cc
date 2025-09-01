@@ -17,6 +17,7 @@
 
 #include "sp_head.h"              // sp_head
 #include "sql_base.h"             // close_thread_tables
+#include "sql_db.h"               // get_default_db_collation
 #include "sql_parse.h"            // sp_process_definer
 #include "sql_show.h"             // append_identifier
 #include "sql_sys_or_ddl_trigger.h"
@@ -143,6 +144,43 @@ static bool store_trigger_metadata(THD *thd, LEX *lex, TABLE *event_table,
               fields[ET_FIELD_DB]->field_name.str);
      return true;
    }
+
+  fields[ET_FIELD_CHARACTER_SET_CLIENT]->set_notnull();
+  ret= fields[ET_FIELD_CHARACTER_SET_CLIENT]->store(
+    &thd->variables.character_set_client->cs_name,
+    system_charset_info);
+  if (ret)
+  {
+    my_error(ER_EVENT_STORE_FAILED, MYF(0),
+             fields[ET_FIELD_CHARACTER_SET_CLIENT]->field_name.str, ret);
+    return true;
+  }
+
+  fields[ET_FIELD_COLLATION_CONNECTION]->set_notnull();
+  ret= fields[ET_FIELD_COLLATION_CONNECTION]->
+    store(&thd->variables.collation_connection->coll_name,
+          system_charset_info);
+  if (ret)
+  {
+    my_error(ER_EVENT_STORE_FAILED, MYF(0),
+             fields[ET_FIELD_COLLATION_CONNECTION]->field_name.str, ret);
+    return true;
+
+  }
+
+  CHARSET_INFO *db_cl= get_default_db_collation(thd, sphead->m_db.str);
+
+  fields[ET_FIELD_DB_COLLATION]->set_notnull();
+  ret= fields[ET_FIELD_DB_COLLATION]->store(&db_cl->coll_name,
+                                              system_charset_info);
+  if (ret)
+  {
+    my_error(ER_EVENT_STORE_FAILED, MYF(0),
+             fields[ET_FIELD_DB_COLLATION]->field_name.str, ret);
+    return true;
+
+  }
+
 
   ret= fields[ET_FIELD_ON_COMPLETION]->store(
     (longlong)Event_parse_data::ON_COMPLETION_DEFAULT, true);
@@ -371,7 +409,7 @@ bool mysql_drop_sys_or_ddl_trigger(THD *thd, bool *no_ddl_trigger_found)
 }
 
 static Sys_trigger*
-sys_triggers[TRG_ACTION_MAX][TRG_SYS_EVENT_MAX - TRG_SYS_EVENT_MIN]= {0};
+sys_triggers[TRG_ACTION_MAX][TRG_SYS_EVENT_MAX - TRG_SYS_EVENT_MIN]= {{nullptr}};
 
 static THD *thd_for_before_sys_triggers= nullptr;
 
@@ -387,7 +425,7 @@ bool Sys_trigger::execute()
   List<Item> empty_item_list;
   bool ret= m_sp->execute_procedure(m_thd, &empty_item_list);
 
-  return false;
+  return ret;
 }
 
 static LEX_CSTRING events_to_string(const LEX_CSTRING base_event_names[],
@@ -686,10 +724,6 @@ static bool load_system_triggers(THD *thd)
     trg_when=
       (trg_action_time_type)event_table->field[ET_FIELD_WHEN]->val_int();
 
-//    printf("trg_name=%s,trg_kind=%d,trg_when=%d,trg_status=%d,trg_definer=%s,"
-//           "trg_body=%s\n", trg_name.str, trg_kind, trg_when, trg_status,
-//           trg_definer.str, trg_body.str);
-
     Sys_trigger *sys_trg=
       instantiate_sys_trigger(thd, db_name, trg_name,
                               trg_definer, trg_kind, trg_when,
@@ -711,8 +745,8 @@ static bool load_system_triggers(THD *thd)
      enumerated values, so need to do translation from bit mask to enumeration
     */
     trg_all_events_set trg_event_for_registering = TRG_EVENT_STARTUP;
-    for (trg_all_events_set tk= (trg_kind & ~0x01); tk != 0;
-         tk = tk >>1, trg_event_for_registering++)
+    for (trg_all_events_set tk= trg_kind >> 1; tk != 0;
+         tk= tk >>1, trg_event_for_registering++)
     {
       if (tk & 0x01)
         register_trigger(sys_trg->inc_ref_count(), trg_when,
@@ -731,11 +765,9 @@ bool run_after_startup_triggers()
   if (opt_bootstrap)
     return false;
 
-  if (!(thd_for_before_sys_triggers= new THD(0)))
-    return true;
-
   bool stack_top;
 
+  thd_for_before_sys_triggers= new THD{0};
   thd_for_before_sys_triggers->thread_stack= (char*) &stack_top;
   thd_for_before_sys_triggers->store_globals();
   thd_for_before_sys_triggers->set_query_inner(
@@ -766,8 +798,6 @@ bool run_after_startup_triggers()
 
   thd_for_before_sys_triggers->thread_stack= nullptr;
 
-  delete thd_for_before_sys_triggers;
-
   return false;
 }
 
@@ -776,6 +806,10 @@ void run_before_shutdown_triggers()
   if (opt_bootstrap)
     return;
 
+  bool stack_top;
+
+  thd_for_before_sys_triggers->thread_stack= (char*) &stack_top;
+
   Sys_trigger *trg=
         get_trigger_by_type(TRG_ACTION_BEFORE, TRG_EVENT_SHUTDOWN);
   while (trg)
@@ -783,4 +817,7 @@ void run_before_shutdown_triggers()
     (void)trg->execute();
     trg= trg->next;
   }
+
+  thd_for_before_sys_triggers->thread_stack= nullptr;
+  delete thd_for_before_sys_triggers;
 }
