@@ -476,3 +476,10 @@ set @zenica   = ST_GeomFromText('POINT(17.907743 44.203438)');
 set @sarajevo = ST_GeomFromText('POINT(18.413076 43.856258)');
 SELECT TRUNCATE(ST_Distance_Sphere(@zenica, @sarajevo), 10);
 SELECT TRUNCATE(ST_Distance_Sphere(@sarajevo, @zenica), 10);
+
+#bug MDEV-36058 ST_CROSSES returns 0 instead of NULL.
+
+SELECT ST_CROSSES( ST_GEOMFROMTEXT('point(1 1)'), st_geomfromtext('point(1 1)') ) a;
+SELECT ST_CROSSES( ST_GEOMFROMTEXT('POLYGON ((59 18,67 18,67 13,59 13,59 18)) '), st_geomfromtext('polygon((2 2,2 4, 4 2,2 2))') ) a;
+SELECT ST_CROSSES( ST_GEOMFROMTEXT('POLYGON ((59 18,67 18,67 13,59 13,59 18)) '), st_geomfromtext('point(1 1)') ) a;
+
