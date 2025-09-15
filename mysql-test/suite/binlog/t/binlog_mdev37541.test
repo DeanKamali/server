@@ -1,0 +1,36 @@
+--source include/have_innodb.inc
+--source include/have_binlog_format_mixed.inc
+
+create table t1 (a int primary key, b text) engine=innodb;
+
+connect(trx1_rollback,localhost,root,,);
+CREATE TABLE t_x (a int) engine=MEMORY;
+
+--let $master_file= query_get_value(SHOW MASTER STATUS, File, 1)
+--let $binlog_start=query_get_value(SHOW MASTER STATUS, Position, 1)
+SET binlog_format=row;
+CREATE TEMPORARY TABLE tt_tmp ( id INT ) ENGINE = Memory;
+BEGIN;
+  insert into t_x values (1);
+  drop temporary table tt_tmp;
+  insert into t1 values (99, "gotta log first");
+
+SET DEBUG_SYNC= 'reset';
+SET DEBUG_SYNC= "before_group_commit_queue WAIT_FOR trx1_go";
+
+--send ROLLBACK
+
+# trx2_commit
+connection default;
+insert into t1 values (99, "second best in binlog");
+select * from t1;
+
+SET DEBUG_SYNC= "now SIGNAL trx1_go";
+
+--echo # Prove the logging order is Trx1, Trx2
+--source include/show_binlog_events.inc
+
+drop table t_x, t1;
+disconnect trx1_rollback;
+
+--echo # end of the tests
