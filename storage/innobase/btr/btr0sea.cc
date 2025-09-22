@@ -341,7 +341,7 @@ void btr_sea::partition::prepare_insert() noexcept
 ATTRIBUTE_COLD ATTRIBUTE_NOINLINE
 void btr_sea::partition::rollback_insert() noexcept
 {
-  ut_ad(latch.have_rd());
+  ut_ad(latch.have_any());
   ut_ad(!btr_search.enabled);
   if (buf_block_t *block= spare.exchange(nullptr))
   {
