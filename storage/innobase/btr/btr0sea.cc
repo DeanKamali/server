@@ -1199,10 +1199,11 @@ btr_search_guess_on_hash(
   ut_ad(!block->page.is_write_fixed(state) || latch_mode == BTR_SEARCH_LEAF);
 
   const dict_index_t *block_index= block->index;
+  if (!block_index)
+    goto block_and_ahi_release_and_fail;
   if (index != block_index && index_id == block_index->id)
   {
     ut_a(block_index->freed());
-    cursor->flag= BTR_CUR_HASH_FAIL;
     goto block_and_ahi_release_and_fail;
   }
 
