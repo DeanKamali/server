@@ -122,7 +122,7 @@ inline void btr_sea::partition::free() noexcept
 
 inline bool btr_sea::hash_table::create(ulint n) noexcept
 {
-  n_cells= uint(ut_find_prime(n));
+  n_cells= n;
   const size_t size= MY_ALIGN(pad(n_cells) * sizeof *array,
                               CPU_LEVEL1_DCACHE_LINESIZE);
   void *v= aligned_malloc(size, CPU_LEVEL1_DCACHE_LINESIZE);

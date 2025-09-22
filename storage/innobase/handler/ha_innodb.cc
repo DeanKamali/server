@@ -3750,8 +3750,10 @@ static void innodb_adaptive_hash_index_cells_update(THD*, st_mysql_sys_var*,
 
 static MYSQL_SYSVAR_UINT(adaptive_hash_index_cells, btr_search.n_cells,
   PLUGIN_VAR_RQCMDARG,
-  "Number of adaptive hash table cells in each partition",
-  nullptr, innodb_adaptive_hash_index_cells_update, 0, 0, UINT_MAX, 0);
+  "Number of adaptive hash table cells in each partition;"
+  " 16381 at start defaults to being derived from innodb_buffer_pool_size",
+  nullptr, innodb_adaptive_hash_index_cells_update, 16381, 16381,
+  sizeof(size_t) < 8 ? (1U << 30) - 1 : UINT_MAX, 0);
 #endif /* BTR_CUR_HASH_ADAPT */
 
 /****************************************************************//**
@@ -3870,14 +3872,18 @@ static int innodb_init_params()
     DBUG_RETURN(HA_ERR_INITIALIZATION);
   }
 
-  if (!btr_search.n_cells)
+  if (btr_search.n_cells <=
+      MYSQL_SYSVAR_NAME(adaptive_hash_index_cells).min_val)
+  {
+    size_t n{innodb_buffer_pool_size / 512 / btr_search.n_parts};
+    if (4 < sizeof n)
+      n= std::min(size_t{UINT_MAX}, ut_find_prime(n));
+    else
+      n= std::min(size_t{(1U << 30) - 1},
+                  ut_find_prime(std::min(size_t{(1U << 30) - 1}, n)));
     btr_search.n_cells=
-      uint(std::max<size_t>(16384,
-                            std::min<size_t>(UINT_MAX,
-                                             innodb_buffer_pool_size / 512 /
-                                             btr_search.n_parts)));
-
-  MYSQL_SYSVAR_NAME(adaptive_hash_index_cells).min_val= 16384;
+      std::max(MYSQL_SYSVAR_NAME(adaptive_hash_index_cells).min_val, uint(n));
+  }
 
   if (compression_algorithm_is_not_loaded(innodb_compression_algorithm,
                                           ME_ERROR_LOG))

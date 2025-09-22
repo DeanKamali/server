@@ -319,7 +319,7 @@ public:
     erase_status erase(uint32_t fold, const rec_t *rec) noexcept;
   };
 
-  /** number of hash table entries, to be divided by n_parts */
+  /** number of hash table entries, to be multiplied by n_parts */
   uint n_cells;
   /** innodb_adaptive_hash_index_parts */
   ulong n_parts;
