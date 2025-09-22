@@ -1397,15 +1397,17 @@ retry:
       /* Someone else has meanwhile dropped the hash index */
       goto cleanup;
     ut_a(block->index == index);
-  }
 
-  if (UNIV_UNLIKELY(block->ahi_left_bytes_fields != left_bytes_fields))
-  {
-    /* Someone else has meanwhile built a new hash index on the page,
-    with different parameters */
-    part.latch.wr_unlock();
-    goto retry;
+    if (UNIV_UNLIKELY(block->ahi_left_bytes_fields != left_bytes_fields))
+    {
+      /* Someone else has meanwhile built a new hash index on the page,
+      with different parameters */
+      part.latch.wr_unlock();
+      goto retry;
+    }
   }
+  else
+    ut_ad(block->ahi_left_bytes_fields == left_bytes_fields);
 
   MONITOR_INC_VALUE(MONITOR_ADAPTIVE_HASH_ROW_REMOVED, n_folds);
 
@@ -1502,8 +1504,6 @@ void btr_search_drop_page_hash_when_freed(const page_id_t page_id) noexcept
 
 /** Build a hash index on a page with the given parameters. If the page already
 has a hash index with different parameters, the old hash index is removed.
-If index is non-NULL, this function checks if n_fields and n_bytes are
-sensible, and does not build a hash index if not.
 @param index               B-tree index
 @param block               latched B-tree leaf page
 @param part                the adaptive search partition
@@ -1610,34 +1610,66 @@ static void btr_search_build_page_hash_index(dict_index_t *index,
   }
 
   part.prepare_insert();
-  part.latch.rd_lock(SRW_LOCK_CALL);
+  part.latch.wr_lock(SRW_LOCK_CALL);
 
-  if (!block->index)
+  if (ut_d(dict_index_t *b_index=) block->index)
   {
+    ut_ad(b_index == index);
+    if (block->ahi_left_bytes_fields != left_bytes_fields)
+    {
+      /* Another thread already built a hash index. */
+    unlock_and_exit:
+      part.latch.wr_unlock();
+      return;
+    }
+  }
+  else
+  {
+    ut_ad(!block->n_pointers);
+
     if (!btr_search.enabled)
     {
       part.rollback_insert();
-      goto exit_func;
+      goto unlock_and_exit;
     }
-    ut_ad(!block->n_pointers);
-    index->search_info.ref_count++;
   }
-  else if (block->ahi_left_bytes_fields != left_bytes_fields)
-    goto exit_func;
 
   block->n_hash_helps= 0;
   block->index= index;
   block->ahi_left_bytes_fields= left_bytes_fields;
 
+# if defined _WIN32 || defined SUX_LOCK_GENERIC
+  part.latch.wr_unlock();
+  part.latch.rd_lock(SRW_LOCK_CALL);
+  if (ut_d(dict_index_t *b_index=) block->index)
+  {
+    ut_ad(b_index == index);
+    if (block->ahi_left_bytes_fields != left_bytes_fields)
+      goto unfreeze_and_exit;
+  }
+  else
+  {
+    ut_ad(!block->n_pointers);
+    if (!btr_search.enabled)
+      part.rollback_insert();
+  unfreeze_and_exit:
+    part.latch.rd_unlock();
+    return;
+  }
+# else
+  part.latch.wr_rd_downgrade(SRW_LOCK_CALL);
+# endif
+
+  index->search_info.ref_count++;
   MONITOR_INC_VALUE(MONITOR_ADAPTIVE_HASH_ROW_ADDED, n_cached);
 
-  while (n_cached)
+  for (size_t i= 0; i < n_cached; i++)
   {
 #if SIZEOF_SIZE_T <= 4
-    const auto &f= fr[--n_cached];
+    const auto &f= fr[i];
     const rec_t *rec= reinterpret_cast<const rec_t*>(f.offset);
 #else
-    const auto f= fr[--n_cached];
+    const auto f= fr[i];
     const rec_t *rec= page + (uint32_t(uintptr_t(page)) ^ f.offset);
 #endif
     part.insert(f.fold, rec, block);
@@ -1649,17 +1681,22 @@ static void btr_search_build_page_hash_index(dict_index_t *index,
     if (rec != page + PAGE_NEW_SUPREMUM)
     {
       part.latch.rd_unlock();
+      ut_ad(n_cached == array_elements(fr));
+      fr[0]= fr[array_elements(fr) - 1];
+      n_cached= 1;
       goto next_not_redundant;
     }
   }
   else if (rec != page + PAGE_OLD_SUPREMUM)
   {
     part.latch.rd_unlock();
+    ut_ad(n_cached == array_elements(fr));
+    fr[0]= fr[array_elements(fr) - 1];
+    n_cached= 1;
     goto next_redundant;
   }
 
   MONITOR_INC(MONITOR_ADAPTIVE_HASH_PAGE_ADDED);
-exit_func:
   assert_block_ahi_valid(block);
   part.latch.rd_unlock();
 }

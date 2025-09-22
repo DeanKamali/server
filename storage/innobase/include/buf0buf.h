@@ -871,7 +871,7 @@ struct buf_block_t{
 # endif /* UNIV_AHI_DEBUG || UNIV_DEBUG */
   /** index for which the adaptive hash index has been created,
   or nullptr if the page does not exist in the index.
-  Protected by btr_sea::partition::latch. */
+  May be modified while holding exclusive btr_sea::partition::latch. */
   Atomic_relaxed<dict_index_t*> index;
   /* @} */
 #else /* BTR_CUR_HASH_ADAPT */

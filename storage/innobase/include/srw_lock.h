@@ -310,6 +310,7 @@ public:
     ut_ad(lk < WRITER);
     u_unlock();
   }
+  void wr_rd_downgrade() noexcept { wr_u_downgrade(); u_rd_downgrade(); }
 
   void rd_unlock() noexcept
   {
@@ -556,6 +557,23 @@ public:
       PSI_RWLOCK_CALL(unlock_rwlock)(pfs_psi);
     lock.wr_unlock();
   }
+# if defined _WIN32 || defined SUX_LOCK_GENERIC
+# else
+  void wr_rd_downgrade(const char *file, unsigned line) noexcept
+  {
+    if (psi_likely(pfs_psi != nullptr))
+    {
+      PSI_RWLOCK_CALL(unlock_rwlock)(pfs_psi);
+      PSI_rwlock_locker_state state;
+      if (PSI_rwlock_locker *locker=
+          PSI_RWLOCK_CALL(start_rwlock_rdwait)
+          (&state, pfs_psi, PSI_RWLOCK_READLOCK, file, line))
+        PSI_RWLOCK_CALL(end_rwlock_rdwait)(locker, 0);
+    }
+
+    lock.wr_rd_downgrade();
+  }
+#endif
   bool rd_lock_try() noexcept { return lock.rd_lock_try(); }
   bool wr_lock_try() noexcept { return lock.wr_lock_try(); }
   void lock_shared() noexcept { return rd_lock(SRW_LOCK_CALL); }
@@ -595,13 +613,13 @@ public:
   void SRW_LOCK_INIT(mysql_pfs_key_t key) noexcept;
   void destroy() noexcept;
 
-#ifndef SUX_LOCK_GENERIC
+# ifndef SUX_LOCK_GENERIC
   /** @return whether any lock may be held by any thread */
   bool is_locked_or_waiting() const noexcept
   { return srw_lock::is_locked_or_waiting(); }
   /** @return whether an exclusive lock may be held by any thread */
   bool is_write_locked() const noexcept { return srw_lock::is_write_locked(); }
-#endif
+# endif
 
   /** Acquire an exclusive lock */
   void wr_lock(SRW_LOCK_ARGS(const char *file, unsigned line)) noexcept;
@@ -609,6 +627,11 @@ public:
   bool wr_lock_try() noexcept;
   /** Release after wr_lock() */
   void wr_unlock() noexcept;
+# if defined _WIN32 || defined SUX_LOCK_GENERIC
+# else
+  /** Downgrade wr_lock() to rd_lock() */
+  void wr_rd_downgrade() noexcept;
+# endif
   /** Acquire a shared lock */
   void rd_lock(SRW_LOCK_ARGS(const char *file, unsigned line)) noexcept;
   /** @return whether a shared lock was acquired */
