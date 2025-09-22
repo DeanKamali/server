@@ -34,6 +34,16 @@ this program; if not, write to the Free Software Foundation, Inc.,
 # define SUX_LOCK_GENERIC /* Use dummy implementation for debugging purposes */
 #endif
 
+#ifndef UNIV_PFS_RWLOCK
+# define SRW_LOCK_INIT(key) init()
+# define SRW_LOCK_ARGS(file, line) /* nothing */
+# define SRW_LOCK_CALL /* nothing */
+#else
+# define SRW_LOCK_INIT(key) init(key)
+# define SRW_LOCK_ARGS(file, line) file, line
+# define SRW_LOCK_CALL __FILE__, __LINE__
+#endif
+
 /** An exclusive-only variant of srw_lock */
 template<bool spinloop>
 class pthread_mutex_wrapper final
@@ -416,16 +426,9 @@ typedef ssux_lock_impl<true> srw_spin_lock_low;
 #endif
 
 #ifndef UNIV_PFS_RWLOCK
-# define SRW_LOCK_INIT(key) init()
-# define SRW_LOCK_ARGS(file, line) /* nothing */
-# define SRW_LOCK_CALL /* nothing */
 typedef srw_lock_low srw_lock;
 typedef srw_spin_lock_low srw_spin_lock;
 #else
-# define SRW_LOCK_INIT(key) init(key)
-# define SRW_LOCK_ARGS(file, line) file, line
-# define SRW_LOCK_CALL __FILE__, __LINE__
-
 /** Slim shared-update-exclusive lock with PERFORMANCE_SCHEMA instrumentation */
 class ssux_lock
 {
@@ -630,7 +633,7 @@ public:
 # if defined _WIN32 || defined SUX_LOCK_GENERIC
 # else
   /** Downgrade wr_lock() to rd_lock() */
-  void wr_rd_downgrade() noexcept;
+  void wr_rd_downgrade(SRW_LOCK_ARGS(const char*,unsigned)) noexcept;
 # endif
   /** Acquire a shared lock */
   void rd_lock(SRW_LOCK_ARGS(const char *file, unsigned line)) noexcept;
