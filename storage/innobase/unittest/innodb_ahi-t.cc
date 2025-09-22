@@ -1,7 +1,11 @@
 #include "tap.h"
 
-#define SUX_LOCK_GENERIC
-#define NO_ELISION
+#ifndef SUX_LOCK_GENERIC
+# define SUX_LOCK_GENERIC
+#endif
+#ifndef NO_ELISION
+# define NO_ELISION
+#endif
 #define thd_kill_level(thd) 0
 #define srv0mon_h
 #define MONITOR_INC(x)
@@ -50,6 +54,7 @@ void srw_lock_debug::SRW_LOCK_INIT(mysql_pfs_key_t) noexcept {}
 void srw_lock_debug::destroy() noexcept {}
 bool srw_lock_debug::have_wr() const noexcept { return false; }
 bool srw_lock_debug::have_rd() const noexcept { return false; }
+bool srw_lock_debug::have_any() const noexcept { return false; }
 void srw_lock_debug::rd_unlock() noexcept {}
 void srw_lock_debug::rd_lock(SRW_LOCK_ARGS(const char*,unsigned)) noexcept {}
 void srw_lock_debug::wr_lock(SRW_LOCK_ARGS(const char*,unsigned)) noexcept {}
