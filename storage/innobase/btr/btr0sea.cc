@@ -1800,14 +1800,15 @@ void btr_search_update_hash_on_delete(btr_cur_t *cursor) noexcept
     {
       part.latch.wr_lock(SRW_LOCK_CALL);
       if (UNIV_LIKELY(btr_search.enabled))
+      {
         s= part.erase<true>(fold, rec);
+        ut_ad(s != btr_sea::partition::ERASE_RETRY);
+      }
       else
         part.latch.wr_unlock();
-
-      ut_ad(s != btr_sea::partition::ERASE_RETRY);
     }
 
-    if (s != btr_sea::partition::ERASED)
+    if (s == btr_sea::partition::ERASED)
     {
       MONITOR_INC(MONITOR_ADAPTIVE_HASH_ROW_REMOVED);
     }
