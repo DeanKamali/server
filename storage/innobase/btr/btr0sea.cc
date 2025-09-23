@@ -1631,12 +1631,12 @@ static void btr_search_build_page_hash_index(dict_index_t *index,
       part.rollback_insert();
       goto unlock_and_exit;
     }
-  }
 
-  block->n_hash_helps= 0;
-  block->index= index;
-  block->ahi_left_bytes_fields= left_bytes_fields;
-  index->search_info.ref_count++;
+    block->n_hash_helps= 0;
+    block->index= index;
+    block->ahi_left_bytes_fields= left_bytes_fields;
+    index->search_info.ref_count++;
+  }
 
 # if defined _WIN32 || defined SUX_LOCK_GENERIC
   part.latch.wr_unlock();
