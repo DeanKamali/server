@@ -706,7 +706,12 @@ static uint32_t btr_search_info_update_hash(const btr_cur_t &cursor) noexcept
     static_assert(buf_block_t::LEFT_SIDE == 1U << 31, "");
     left_bytes_fields= (cmp >= 0) << 31;
 
-    if (left_bytes_fields)
+    if (cmp == 0)
+    {
+      /* Reset to default case */
+      left_bytes_fields|= 1;
+    }
+    else if (left_bytes_fields)
     {
       if (cursor.up_match >= n_uniq)
         left_bytes_fields|= n_uniq;
