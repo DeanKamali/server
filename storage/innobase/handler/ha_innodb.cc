@@ -300,7 +300,7 @@ static TYPELIB innodb_stats_method_typelib = {
 	array_elements(innodb_stats_method_names) - 1,
 	"innodb_stats_method_typelib",
 	innodb_stats_method_names,
-	NULL
+	NULL, NULL
 };
 
 /** Possible values for system variable "innodb_linux_aio" */
@@ -318,7 +318,7 @@ TYPELIB innodb_linux_aio_typelib = {
 	array_elements(innodb_linux_aio_names) - 1,
 	"innodb_linux_aio_typelib",
 	innodb_linux_aio_names,
-	NULL
+	NULL, NULL
 };
 #endif
 
@@ -337,7 +337,7 @@ TYPELIB innodb_checksum_algorithm_typelib = {
 	array_elements(innodb_checksum_algorithm_names) - 1,
 	"innodb_checksum_algorithm_typelib",
 	innodb_checksum_algorithm_names,
-	NULL
+	NULL,	NULL
 };
 
 /** Possible values for system variable "innodb_default_row_format". */
@@ -354,7 +354,7 @@ static TYPELIB innodb_default_row_format_typelib = {
 	array_elements(innodb_default_row_format_names) - 1,
 	"innodb_default_row_format_typelib",
 	innodb_default_row_format_names,
-	NULL
+	NULL, NULL
 };
 
 /** Names of allowed values of innodb_flush_method */
@@ -380,7 +380,7 @@ TYPELIB innodb_flush_method_typelib = {
 	array_elements(innodb_flush_method_names) - 1,
 	"innodb_flush_method_typelib",
 	innodb_flush_method_names,
-	NULL
+	NULL, NULL
 };
 
 /** Deprecated parameter */
@@ -395,7 +395,7 @@ TYPELIB innodb_doublewrite_typelib= {
   array_elements(innodb_doublewrite_names) - 1,
   "innodb_doublewrite_typelib",
   innodb_doublewrite_names,
-  nullptr
+  nullptr, nullptr
 };
 
 /** Names of allowed values of innodb_deadlock_report */
@@ -415,7 +415,7 @@ static TYPELIB innodb_deadlock_report_typelib = {
 	array_elements(innodb_deadlock_report_names) - 1,
 	"innodb_deadlock_report_typelib",
 	innodb_deadlock_report_names,
-	NULL
+	NULL, NULL
 };
 
 /** Allowed values of innodb_instant_alter_column_allowed */
@@ -431,7 +431,7 @@ static TYPELIB innodb_instant_alter_column_allowed_typelib = {
 	array_elements(innodb_instant_alter_column_allowed_names) - 1,
 	"innodb_instant_alter_column_allowed_typelib",
 	innodb_instant_alter_column_allowed_names,
-	NULL
+	NULL, NULL
 };
 
 /** Retrieve the FTS Relevance Ranking result for doc with doc_id
@@ -19759,7 +19759,7 @@ const char *page_compression_algorithms[]= { "none", "zlib", "lz4", "lzo", "lzma
 static TYPELIB page_compression_algorithms_typelib=
 {
   array_elements(page_compression_algorithms) - 1, 0,
-  page_compression_algorithms, 0
+  page_compression_algorithms, 0, NULL
 };
 static MYSQL_SYSVAR_ENUM(compression_algorithm, innodb_compression_algorithm,
   PLUGIN_VAR_OPCMDARG,
@@ -19783,7 +19783,7 @@ static MYSQL_SYSVAR_ULONG(fatal_semaphore_wait_threshold, srv_fatal_semaphore_wa
 static const char* srv_encrypt_tables_names[] = { "OFF", "ON", "FORCE", 0 };
 static TYPELIB srv_encrypt_tables_typelib = {
 	array_elements(srv_encrypt_tables_names)-1, 0, srv_encrypt_tables_names,
-	NULL
+	NULL, NULL
 };
 static MYSQL_SYSVAR_ENUM(encrypt_tables, srv_encrypt_tables,
 			 PLUGIN_VAR_OPCMDARG,

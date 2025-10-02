@@ -773,7 +773,7 @@ static const char *write_policy_names[] = {"write_committed", "write_prepared",
 
 static TYPELIB write_policy_typelib = {array_elements(write_policy_names) - 1,
                                        "write_policy_typelib",
-                                       write_policy_names, nullptr};
+                                       write_policy_names, nullptr, nullptr};
 
 #if 0 // MARIAROCKS_NOT_YET : read-free replication is not supported
 /* This array needs to be kept up to date with myrocks::read_free_rpl_type */
@@ -791,7 +791,7 @@ static const char *info_log_level_names[] = {"debug_level", "info_level",
 
 static TYPELIB info_log_level_typelib = {
     array_elements(info_log_level_names) - 1, "info_log_level_typelib",
-    info_log_level_names, nullptr};
+    info_log_level_names, nullptr, nullptr};
 
 static void rocksdb_set_rocksdb_info_log_level(
     THD *const thd, struct st_mysql_sys_var *const var, void *const var_ptr,
@@ -908,7 +908,7 @@ static const char *index_type_names[] = {"kBinarySearch", "kHashSearch", NullS};
 
 static TYPELIB index_type_typelib = {array_elements(index_type_names) - 1,
                                      "index_type_typelib", index_type_names,
-                                     nullptr};
+                                     nullptr, nullptr};
 
 const ulong RDB_MAX_LOCK_WAIT_SECONDS = 1024 * 1024 * 1024;
 const ulong RDB_DEFAULT_MAX_ROW_LOCKS = 1024 * 1024;

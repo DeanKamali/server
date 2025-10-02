@@ -35,7 +35,7 @@ static const char *encryption_algorithm_names[]=
 static TYPELIB encryption_algorithm_typelib=
 {
   array_elements(encryption_algorithm_names)-1,"",
-  encryption_algorithm_names, NULL
+  encryption_algorithm_names, NULL, NULL
 };
 
 

@@ -67,7 +67,7 @@ typedef enum { DO_VIEWS_NO, DO_VIEWS_YES, DO_UPGRADE, DO_VIEWS_FROM_MYSQL } enum
 const char *do_views_opts[]= {"NO", "YES", "UPGRADE", "UPGRADE_FROM_MYSQL",
   NullS};
 TYPELIB do_views_typelib= { array_elements(do_views_opts) - 1, "",
-    do_views_opts, NULL };
+    do_views_opts, NULL, NULL };
 static ulong opt_do_views= DO_VIEWS_NO;
 
 static struct my_option my_long_options[] =

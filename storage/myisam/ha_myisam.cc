@@ -42,13 +42,13 @@ static ulong opt_myisam_block_size;
 const char *myisam_recover_names[] =
 { "DEFAULT", "BACKUP", "FORCE", "QUICK", "BACKUP_ALL", "OFF", NullS};
 TYPELIB myisam_recover_typelib= {array_elements(myisam_recover_names)-1,"",
-				 myisam_recover_names, NULL};
+				 myisam_recover_names, NULL, NULL};
 
 const char *myisam_stats_method_names[] = {"NULLS_UNEQUAL", "NULLS_EQUAL",
                                            "NULLS_IGNORED", NullS};
 TYPELIB myisam_stats_method_typelib= {
   array_elements(myisam_stats_method_names) - 1, "",
-  myisam_stats_method_names, NULL};
+  myisam_stats_method_names, NULL, NULL};
 
 static MYSQL_SYSVAR_ULONG(block_size, opt_myisam_block_size,
   PLUGIN_VAR_READONLY | PLUGIN_VAR_RQCMDARG,

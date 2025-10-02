@@ -53,7 +53,7 @@
 
 const char *del_exts[]= {".BAK", ".opt", NullS};
 static TYPELIB deletable_extensions=
-{array_elements(del_exts)-1,"del_exts", del_exts, NULL};
+{array_elements(del_exts)-1,"del_exts", del_exts, NULL, NULL};
 
 static bool find_db_tables_and_rm_known_files(THD *, MY_DIR *,
                                               const Lex_ident_db_normalized &db,

@@ -143,7 +143,7 @@ static const char *opt_system_type_values[]=
 static TYPELIB opt_system_types=
 {
   array_elements(opt_system_type_values), "system dump options",
-  opt_system_type_values, NULL
+  opt_system_type_values, NULL, NULL
 };
 static ulonglong opt_system= 0ULL;
 static my_bool insert_pat_inited= 0, debug_info_flag= 0, debug_check_flag= 0,
@@ -237,7 +237,7 @@ const char *compatible_mode_names[]=
  (1U<<10)   /* ANSI       */\
 )
 TYPELIB compatible_mode_typelib= {array_elements(compatible_mode_names) - 1,
-                                  "", compatible_mode_names, NULL};
+                                  "", compatible_mode_names, NULL, NULL};
 
 #define MED_ENGINES "MRG_MyISAM, MRG_ISAM, CONNECT, OQGRAPH, SPIDER, VP, FEDERATED"
 

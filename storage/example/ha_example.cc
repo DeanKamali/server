@@ -1005,7 +1005,7 @@ const char *enum_var_names[]=
 TYPELIB enum_var_typelib=
 {
   array_elements(enum_var_names) - 1, "enum_var_typelib",
-  enum_var_names, NULL
+  enum_var_names, NULL, NULL
 };
 
 static MYSQL_SYSVAR_ENUM(

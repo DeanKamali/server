@@ -395,7 +395,7 @@ static const char *event_names[]=
 };
 static TYPELIB events_typelib=
 {
-  array_elements(event_names) - 1, "", event_names, NULL
+  array_elements(event_names) - 1, "", event_names, NULL, NULL
 };
 static MYSQL_SYSVAR_SET(events, events, PLUGIN_VAR_RQCMDARG,
        "Specifies the set of events to monitor. Can be CONNECT, QUERY, TABLE,"
@@ -418,7 +418,7 @@ static const char *output_type_names[]= {
 static TYPELIB output_typelib=
 {
     array_elements(output_type_names) - 1, "output_typelib",
-    output_type_names, NULL
+    output_type_names, NULL, NULL
 };
 static MYSQL_SYSVAR_ENUM(output_type, output_type, PLUGIN_VAR_RQCMDARG,
        out_type_desc,
@@ -490,7 +490,7 @@ static unsigned int syslog_facility_codes[]=
 static TYPELIB syslog_facility_typelib=
 {
     array_elements(syslog_facility_names) - 1, "syslog_facility_typelib",
-    syslog_facility_names, NULL
+    syslog_facility_names, NULL, NULL
 };
 static MYSQL_SYSVAR_ENUM(syslog_facility, syslog_facility, PLUGIN_VAR_RQCMDARG,
        "The 'facility' parameter of the SYSLOG record."
@@ -515,7 +515,7 @@ static unsigned int syslog_priority_codes[]=
 static TYPELIB syslog_priority_typelib=
 {
     array_elements(syslog_priority_names) - 1, "syslog_priority_typelib",
-    syslog_priority_names, NULL
+    syslog_priority_names, NULL, NULL
 };
 static MYSQL_SYSVAR_ENUM(syslog_priority, syslog_priority, PLUGIN_VAR_RQCMDARG,
        "The 'priority' parameter of the SYSLOG record."

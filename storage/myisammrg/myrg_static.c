@@ -27,7 +27,7 @@ LIST	*myrg_open_list=0;
 static const char *merge_insert_methods[] =
 { "FIRST", "LAST", NullS };
 TYPELIB merge_insert_method= { array_elements(merge_insert_methods)-1,"",
-			       merge_insert_methods, 0};
+			       merge_insert_methods, 0, NULL};
 
 PSI_memory_key rg_key_memory_MYRG_INFO;
 PSI_memory_key rg_key_memory_children;

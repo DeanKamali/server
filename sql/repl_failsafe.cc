@@ -56,7 +56,7 @@ mysql_mutex_t LOCK_rpl_status;
 
 const char *rpl_role_type[] = {"MASTER","SLAVE",NullS};
 TYPELIB rpl_role_typelib = {array_elements(rpl_role_type)-1,"",
-			    rpl_role_type, NULL};
+			    rpl_role_type, NULL, NULL };
 
 const char* rpl_status_type[]=
 {

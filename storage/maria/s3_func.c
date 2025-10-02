@@ -44,7 +44,7 @@ TYPELIB s3_protocol_typelib= {array_elements(protocol_types)-1,"",
                               protocol_types, NULL};
 
 static const char *providers[]= {"Default", "Amazon", "Huawei", NullS};
-TYPELIB s3_provider_typelib = {array_elements(providers)-1,"",providers, NULL};
+TYPELIB s3_provider_typelib = {array_elements(providers)-1,"",providers, NULL, NULL};
 
 /******************************************************************************
  Allocations handler for libmarias3

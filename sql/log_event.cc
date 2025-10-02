@@ -85,7 +85,8 @@ TYPELIB binlog_checksum_typelib=
 {
   array_elements(binlog_checksum_type_names) - 1, "",
   binlog_checksum_type_names,
-  binlog_checksum_type_length
+  binlog_checksum_type_length,
+  NULL
 };
 
 

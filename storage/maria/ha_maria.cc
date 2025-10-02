@@ -90,7 +90,7 @@ const char *maria_recover_names[]=
 TYPELIB maria_recover_typelib=
 {
   array_elements(maria_recover_names) - 1, "",
-  maria_recover_names, NULL
+  maria_recover_names, NULL, NULL
 };
 
 const char *maria_stats_method_names[]=
@@ -101,7 +101,7 @@ const char *maria_stats_method_names[]=
 TYPELIB maria_stats_method_typelib=
 {
   array_elements(maria_stats_method_names) - 1, "",
-  maria_stats_method_names, NULL
+  maria_stats_method_names, NULL, NULL
 };
 
 /* transactions log purge mode */
@@ -112,7 +112,7 @@ const char *maria_translog_purge_type_names[]=
 TYPELIB maria_translog_purge_type_typelib=
 {
   array_elements(maria_translog_purge_type_names) - 1, "",
-  maria_translog_purge_type_names, NULL
+  maria_translog_purge_type_names, NULL, NULL
 };
 
 /* transactional log directory sync */
@@ -123,7 +123,7 @@ const char *maria_sync_log_dir_names[]=
 TYPELIB maria_sync_log_dir_typelib=
 {
   array_elements(maria_sync_log_dir_names) - 1, "",
-  maria_sync_log_dir_names, NULL
+  maria_sync_log_dir_names, NULL, NULL
 };
 
 /* transactional log group commit */
@@ -134,7 +134,7 @@ const char *maria_group_commit_names[]=
 TYPELIB maria_group_commit_typelib=
 {
   array_elements(maria_group_commit_names) - 1, "",
-  maria_group_commit_names, NULL
+  maria_group_commit_names, NULL, NULL
 };
 
 /** Interval between background checkpoints in seconds */

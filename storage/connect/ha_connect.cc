@@ -312,7 +312,7 @@ const char *xtrace_names[] =
 TYPELIB xtrace_typelib =
 {
 	array_elements(xtrace_names) - 1, "xtrace_typelib",
-	xtrace_names, NULL
+	xtrace_names, NULL, NULL
 };
 
 static MYSQL_THDVAR_SET(
@@ -350,7 +350,7 @@ const char *usetemp_names[]=
 TYPELIB usetemp_typelib=
 {
   array_elements(usetemp_names) - 1, "usetemp_typelib",
-  usetemp_names, NULL
+  usetemp_names, NULL, NULL
 };
 
 static MYSQL_THDVAR_ENUM(
@@ -397,7 +397,7 @@ const char *xconv_names[]=
 TYPELIB xconv_typelib=
 {
   array_elements(xconv_names) - 1, "xconv_typelib",
-  xconv_names, NULL
+  xconv_names, NULL, NULL
 };
 
 static MYSQL_THDVAR_ENUM(

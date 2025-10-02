@@ -25,6 +25,7 @@ typedef struct st_typelib {	/* Different types saved here */
   const char *name;		/* Name of typelib */
   const char **type_names;
   unsigned int *type_lengths;
+  const int *hidden_values;
 } TYPELIB;
 
 extern my_ulonglong find_typeset(const char *x, TYPELIB *typelib,

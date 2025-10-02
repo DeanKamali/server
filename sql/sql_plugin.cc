@@ -63,7 +63,7 @@ const char *global_plugin_typelib_names[]=
   { "OFF", "ON", "FORCE", "FORCE_PLUS_PERMANENT", NULL };
 static TYPELIB global_plugin_typelib=
   { array_elements(global_plugin_typelib_names)-1,
-    "", global_plugin_typelib_names, NULL };
+    "", global_plugin_typelib_names, NULL, NULL };
 
 static I_List<i_string> opt_plugin_load_list;
 I_List<i_string> *opt_plugin_load_list_ptr= &opt_plugin_load_list;

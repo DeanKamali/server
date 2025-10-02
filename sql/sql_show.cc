@@ -142,7 +142,7 @@ static const char *grant_names[]={
 
 static TYPELIB grant_types = { sizeof(grant_names)/sizeof(char **),
                                "grant_types",
-                               grant_names, NULL};
+                               grant_names, NULL, NULL};
 #endif
 
 /* Match the values of enum ha_choice */

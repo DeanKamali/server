@@ -118,7 +118,7 @@ const char *base64_output_mode_names[]=
 {"NEVER", "AUTO", "UNSPEC", "DECODE-ROWS", NullS};
 TYPELIB base64_output_mode_typelib=
   { array_elements(base64_output_mode_names) - 1, "",
-    base64_output_mode_names, NULL };
+    base64_output_mode_names, NULL, NULL };
 static enum_base64_output_mode opt_base64_output_mode= BASE64_OUTPUT_UNSPEC;
 static char *opt_base64_output_mode_str= NullS;
 static char* database= 0;

@@ -596,7 +596,7 @@ struct st_command
 };
 
 TYPELIB command_typelib= {array_elements(command_names),"",
-			  command_names, 0};
+			  command_names, 0, NULL};
 
 DYNAMIC_STRING ds_res;
 /* Points to ds_warning in run_query, so it can be freed */
