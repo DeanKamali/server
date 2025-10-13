@@ -233,6 +233,9 @@ create_federatedx_select_handler(THD *thd, SELECT_LEX *sel_lex,
   if (!use_pushdown)
     return nullptr;
 
+  if (lex_unit && sel_lex->master_unit()->with_clause)
+    return nullptr;
+
   auto tbl= get_fed_table_for_pushdown(sel_lex);
   if (!tbl)
     return nullptr;
