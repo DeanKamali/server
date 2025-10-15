@@ -18,6 +18,7 @@
 --connection master
 set @old_binlog_cache_size= @@global.binlog_cache_size;
 set @@global.binlog_cache_size=4096;
+CALL mtr.add_suppression('Error writing file');
 
 --echo #
 --echo # Initialize test data
@@ -30,6 +31,7 @@ create table t1 (a int, b longtext default NULL) engine=innodb;
 --echo # the tmp file.
 --echo #
 set @@session.debug_dbug="+d,simulate_binlog_tmp_file_no_space_left_on_flush";
+--replace_regex /Error writing file '[^']+\/tmp\/[^']+'/Error writing file '...\/tmp\/<FILENAME>'/
 --error 3
 insert into t1 values (2, repeat("y", 8192));
 set @@session.debug_dbug="";
