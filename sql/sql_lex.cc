@@ -12974,6 +12974,21 @@ bool LEX::declare_type_assoc_array(THD *thd,
 }
 
 
+bool LEX::declare_type_ref_cursor(THD *thd,
+                                  const Lex_ident_sys_st &type_name)
+{
+  const Lex_ident_plugin sr= "sys_refcursor"_Lex_ident_plugin;
+  const Type_handler *th= Type_handler::handler_by_name_or_error(thd, sr);
+  if (unlikely(!th))
+    return true;
+  sp_type_def *tdef=
+    new (thd->mem_root) sp_type_def(Lex_ident_column(type_name), th);
+  if (unlikely(!tdef || spcont->type_defs_add(thd, tdef)))
+    return true;
+  return false;
+}
+
+
 bool LEX::set_field_type_udt_or_typedef(Lex_field_type_st *type,
                                         const LEX_CSTRING &name,
                                         const Lex_length_and_dec_st &attr)
