@@ -579,7 +579,7 @@ public:
   {
     latch.rd_lock(SRW_LOCK_CALL);
     archive_size_requested= size;
-    latch.rd_unlock(SRW_LOCK_CALL);
+    latch.rd_unlock();
   }
 };
 
