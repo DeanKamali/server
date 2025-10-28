@@ -2026,3 +2026,117 @@ drop table t,s;
 eval $q1;
 
 --echo # End of 10.4 tests
+
+
+--echo #
+--echo # MDEV-37220 Allow UPDATE/DELETE to read from a CTE
+--echo #
+
+create table t1
+(
+  a int not null,
+  b int,
+  c int,
+  d int,
+  amount decimal,
+  key t1_ix1 (a,b)
+);
+
+insert into t1 values (0, NULL, 0, NULL, 10.0000), (1, 1, 1, 1, 10.0000),
+(2, 2, 2, 2, 20.0000), (3, 3, 3, 3, 30.0000), (4, 4, 4, 4, 40.0000),
+(5, 5, 5, 5, NULL), (6, 6, 6, 6, NULL), (7, 7, 7, 7, 70.0000),
+(8, 8, 8, 8, 80.0000);
+
+create table t2
+(
+  a int NOT NULL,
+  b int,
+  name varchar(50),
+  key t2_ix1 (a,b)
+);
+
+insert into t2 values (0, NULL, 'a'), (1, NULL, 'A'), (2, 2, 'B'), (3,3, 'C'),
+(4,4, 'D'), (5,5, NULL), (6,6, NULL), (7,7, 'E'), (8,8, 'F'), (9,9, 'G'),
+(10,10,'H'), (11,11, NULL), (12,12, NULL);
+
+create table t3
+(
+  a int,
+  b int,
+  description varchar(50)
+);
+
+let $e=
+truncate t3;
+let $i=
+insert into t3 values (1, 1, 'bar'),(2,2,'buz'),(0,NULL, 'gold'),
+(3, 3, 'silver'), (4, 4, 'lead'), (5, 5, 'tin'), (6, 6, 'platinum'),
+(7, 7, 'aluminium');
+
+eval $i;
+
+select * from t3;
+
+--echo # update, single table syntax
+with cte as (select * from t1 where c < 5),
+  cte2 as (select * from t2 where b < 3)
+update t3
+  set t3.a = (select a from cte where b in (select b from cte2) and d = t3.a);
+
+select * from t3;
+eval $e;
+eval $i;
+
+--echo # multi table syntax
+with cte as (select * from t1 where c < 5),
+  cte2 as (select * from t2 where b < 3)
+update t3,cte
+  set t3.a = cte.a+1 where cte.b in (select b from cte2) and d = t3.a;
+
+select * from t3;
+eval $e;
+eval $i;
+
+with cte as (select * from t1 where c < 5),
+  cte2 as (select * from t2 where b < 3)
+update t3, cte, cte2 set t3.a = cte.a+2 where cte.b = cte2.b and d = t3.a;
+
+select * from t3;
+eval $e;
+eval $i;
+
+--echo # delete single table syntax
+with cte as (select * from t1 where c < 5),
+  cte2 as (select * from t2 where b < 3)
+delete from t3
+  where t3.a = (select a from cte where b in (select b from cte2));
+
+select * from t3;
+eval $e;
+eval $i;
+
+--echo # delete multi table syntax
+with cte as (select * from t1 where c < 5),
+  cte2 as (select * from t2 where b < 3)
+delete from t3
+  using t3, cte
+  where t3.a = cte.a and cte.b in (select b from cte2);
+
+select * from t3;
+eval $e;
+eval $i;
+
+with cte as (select * from t1 where c < 5),
+  cte2 as (select * from t2 where b < 3)
+delete from t3
+  using t3, cte, cte2
+  where t3.a = cte.a and cte.b = cte2.b;
+
+
+select * from t3;
+eval $e;
+eval $i;
+
+drop table t1, t2, t3;
+
+--echo # End of 12.2 tests

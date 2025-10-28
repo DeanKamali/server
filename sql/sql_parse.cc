@@ -6070,6 +6070,7 @@ finish:
       thd->variables.default_master_connection.str)
     thd->lex->mi.connection_name= null_clex_str;
 
+  lex->save_list.empty();
   if (lex->sql_command != SQLCOM_SET_OPTION)
     DEBUG_SYNC(thd, "end_of_statement");
   DBUG_RETURN(res || thd->is_error());
@@ -7628,6 +7629,8 @@ void mysql_init_multi_delete(LEX *lex)
   lex->sql_command=  SQLCOM_DELETE_MULTI;
   lex->first_select_lex()->table_list.
     save_and_clear(&lex->auxiliary_table_list);
+  if (lex->with_cte_resolution)
+    lex->save_list.insert(lex->query_tables, &lex->query_tables);
   lex->query_tables= 0;
   lex->query_tables_last= &lex->query_tables;
 }

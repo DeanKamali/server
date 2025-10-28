@@ -153,6 +153,33 @@ bool LEX::resolve_references_to_cte(TABLE_LIST *tables,
 {
   With_element *with_elem= 0;
 
+  /*
+    Restore list created when/if we hit the update command
+    Do not add the table(s) to be updated, which get pushed into save_list
+  */
+  if (save_list.elements > 0)
+  {
+    TABLE_LIST *saved= save_list.first;
+    while (saved)
+    {
+      bool found= FALSE;
+      TABLE_LIST *existing= query_tables;
+      while (existing != *query_tables_last)
+      {
+        if (saved->alias.str &&
+            existing->alias.str &&
+            !strcmp( saved->alias.str, existing->alias.str))
+          found= TRUE;
+        existing= existing->next_global;
+      }
+      if (!found)
+        add_to_query_tables(saved);
+      saved= saved->next_global;
+    }
+    save_list.empty();
+    last_table()->next_global= nullptr;
+  }
+
   for (TABLE_LIST *tbl= tables; tbl != *tables_last; tbl= tbl->next_global)
   {
     if (tbl->derived)
