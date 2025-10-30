@@ -896,7 +896,7 @@ bool fil_space_free(ulint id, bool x_latched) noexcept
 		mysql_mutex_assert_owner(&log_sys.mutex);
 
 		if (space->max_lsn != 0) {
-			ut_d(space->max_lsn = 0);
+			space->max_lsn = 0;
 			fil_system.named_spaces.remove(*space);
 		}
 
@@ -1595,6 +1595,18 @@ fil_space_t *fil_space_t::drop(ulint id, pfs_os_file_t *detached_handle)
     *detached_handle = handle;
   else
     os_file_close(handle);
+
+  /* The above mnt.commit_file() call should remove the space from
+  fil_system.named_spaces, but some pending operations can push it back
+  to the container again. */
+  mysql_mutex_lock(&log_sys.mutex);
+  if (space->max_lsn != 0)
+  {
+    space->max_lsn= 0;
+    fil_system.named_spaces.remove(*space);
+  }
+  mysql_mutex_unlock(&log_sys.mutex);
+
   return space;
 }
 
@@ -1617,12 +1629,6 @@ void fil_close_tablespace(ulint id) noexcept
 	while (buf_flush_list_space(space));
 
 	space->x_unlock();
-	mysql_mutex_lock(&log_sys.mutex);
-	if (space->max_lsn != 0) {
-		ut_d(space->max_lsn = 0);
-		fil_system.named_spaces.remove(*space);
-	}
-	mysql_mutex_unlock(&log_sys.mutex);
 	fil_space_free_low(space);
 }
 
@@ -1631,7 +1637,7 @@ pfs_os_file_t fil_delete_tablespace(ulint id) noexcept
   ut_ad(!is_system_tablespace(id));
   pfs_os_file_t handle= OS_FILE_CLOSED;
   if (fil_space_t *space= fil_space_t::drop(id, &handle))
-    fil_space_free_low(space);
+      fil_space_free_low(space);
   return handle;
 }
 
