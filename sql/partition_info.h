@@ -279,7 +279,9 @@ public:
     {
       KEY_ALGORITHM_NONE= 0,
       KEY_ALGORITHM_51= 1,
-      KEY_ALGORITHM_55= 2
+      KEY_ALGORITHM_55= 2,
+      KEY_ALGORITHM_SIMPLE,
+      KEY_ALGORITHM_END
     };
   enum_key_algorithm key_algorithm;
 

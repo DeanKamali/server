@@ -2470,7 +2470,8 @@ static int add_key_with_algorithm(String *str, const partition_info *part_info)
   int err= 0;
   err+= str->append(STRING_WITH_LEN("KEY "));
 
-  if (part_info->key_algorithm == partition_info::KEY_ALGORITHM_51)
+  if (part_info->key_algorithm != partition_info::KEY_ALGORITHM_NONE &&
+      part_info->key_algorithm != partition_info::KEY_ALGORITHM_55)
   {
     err+= str->append(STRING_WITH_LEN("ALGORITHM = "));
     err+= str->append_longlong(part_info->key_algorithm);

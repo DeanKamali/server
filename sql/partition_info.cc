@@ -2319,7 +2319,7 @@ bool partition_info::fix_parser_data(THD *thd)
     if (part_type == HASH_PARTITION && list_of_part_fields)
     {
       /* KEY partitioning, check ALGORITHM = N. Should not pass the parser! */
-      if (key_algorithm > KEY_ALGORITHM_55)
+      if (key_algorithm >= KEY_ALGORITHM_END)
       {
         my_error(ER_PARTITION_FUNCTION_IS_NOT_ALLOWED, MYF(0));
         DBUG_RETURN(true);

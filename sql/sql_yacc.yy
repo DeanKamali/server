@@ -5040,6 +5040,9 @@ opt_key_algo:
             case 2:
               Lex->part_info->key_algorithm= partition_info::KEY_ALGORITHM_55;
               break;
+            case 3:
+              Lex->part_info->key_algorithm= partition_info::KEY_ALGORITHM_SIMPLE;
+              break;
             default:
               thd->parse_error();
               MYSQL_YYABORT;

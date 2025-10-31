@@ -10229,6 +10229,21 @@ uint8 ha_partition::table_cache_type()
   DBUG_RETURN(get_open_file_sample()->table_cache_type());
 }
 
+static uint32 simple_hash(Field **field_array)
+{
+  Field *field;
+  uint32 result= 0;
+  while ((field= *field_array++))
+  {
+    uint len= field->pack_length();
+    uchar *key= field->ptr;
+    const uchar *end= key + len;
+    /* Not considering overflow */
+    for (; key < end; key++)
+      result= result * 31 + uint (*key);
+  }
+  return result;
+}
 
 /**
   Calculate hash value for KEY partitioning using an array of fields.
@@ -10245,6 +10260,9 @@ uint32 ha_partition::calculate_key_hash_value(Field **field_array)
 {
   Hasher hasher;
   bool use_51_hash;
+  if ((*field_array)->table->part_info->key_algorithm ==
+      partition_info::KEY_ALGORITHM_SIMPLE)
+    return simple_hash(field_array);
   use_51_hash= MY_TEST((*field_array)->table->part_info->key_algorithm ==
                        partition_info::KEY_ALGORITHM_51);
 
