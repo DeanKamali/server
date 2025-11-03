@@ -2427,7 +2427,12 @@ recv_sys_t::parse_mtr_result log_parse_start(source &l, unsigned nonce)
   return recv_sys_t::PREMATURE_EOF;
 
  eom_found:
-  if (*l != log_sys.get_sequence_bit((l - begin) + recv_sys.lsn))
+  const lsn_t end_lsn{(l - begin) + recv_sys.lsn};
+
+  if (*l != log_sys.get_sequence_bit(end_lsn))
+    return recv_sys_t::GOT_EOF;
+
+  if (recv_sys.rpo && recv_sys.rpo < end_lsn)
     return recv_sys_t::GOT_EOF;
 
   if (l.is_eof(5 + nonce))

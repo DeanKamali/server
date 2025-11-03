@@ -1,10 +1,13 @@
-CREATE TABLE t1(a BIGINT PRIMARY KEY) ENGINE=InnoDB;
+CREATE TABLE t1(a BIGINT PRIMARY KEY) ENGINE=InnoDB STATS_PERSISTENT=0;
 INSERT INTO t1 VALUES(1);
+SET GLOBAL innodb_max_purge_lag_wait=0, innodb_log_checkpoint_now=ON;
 CREATE TABLE t2(a BIGINT PRIMARY KEY) ENGINE=InnoDB;
 INSERT INTO t1 VALUES(2);
 SET GLOBAL innodb_flush_log_at_trx_commit=1;
 INSERT INTO t2 VALUES(1);
 # Kill the server
+SELECT * FROM t2;
+ERROR 42S02: Table 'test.t2' doesn't exist in engine
 # Corrupt the pages
 SELECT * FROM t1;
 ERROR 42000: Unknown storage engine 'InnoDB'
