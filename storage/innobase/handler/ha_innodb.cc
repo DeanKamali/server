@@ -19443,18 +19443,9 @@ static MYSQL_SYSVAR_UINT64_T(log_archive_file_size, log_sys.archive_size,
   nullptr, innodb_log_archive_file_size_update,
   0, 0, std::numeric_limits<ulonglong>::max(), 4096);
 
-static void innodb_log_archive_path_update(THD *, st_mysql_sys_var*,
-                                           void *, const void *save)
-  noexcept
-{
-  log_sys.latch.rd_lock(SRW_LOCK_CALL);
-  log_sys.archive_path= static_cast<const char*>(save);
-  log_sys.latch.rd_unlock();
-}
-
 static MYSQL_SYSVAR_CONST_STR(log_archive_path, log_sys.archive_path,
-  PLUGIN_VAR_RQCMDARG,
-  "Path to the log archive", NULL, innodb_log_archive_path_update, NULL);
+  PLUGIN_VAR_RQCMDARG | PLUGIN_VAR_READONLY,
+  "Path to the log archive", nullptr, nullptr, nullptr);
 
 static MYSQL_SYSVAR_UINT64_T(log_recovery_start, recv_sys.recovery_start,
   PLUGIN_VAR_RQCMDARG | PLUGIN_VAR_READONLY,
