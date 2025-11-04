@@ -2433,7 +2433,10 @@ recv_sys_t::parse_mtr_result log_parse_start(source &l, unsigned nonce)
     return recv_sys_t::GOT_EOF;
 
   if (recv_sys.rpo && recv_sys.rpo < end_lsn)
+  {
+    recv_sys.scanned_lsn= end_lsn;
     return recv_sys_t::GOT_EOF;
+  }
 
   if (l.is_eof(5 + nonce))
    return recv_sys_t::PREMATURE_EOF;
