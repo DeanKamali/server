@@ -244,8 +244,8 @@ public:
   lsn_t scanned_lsn;
   /** log sequence number at the end of the FILE_CHECKPOINT record, or 0 */
   lsn_t file_checkpoint;
-  /** recovery start checkpoint (when recovering from archived log) */
-  lsn_t archive_start;
+  /** recovery start checkpoint */
+  lsn_t recovery_start;
   /** recovery point objective (a limit for scanned_lsn) */
   lsn_t rpo;
 

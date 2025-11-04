@@ -4787,9 +4787,20 @@ func_exit:
 	recv_sys_t::parser parser[2];
 
 	if (log_sys.is_recoverable()) {
+		if (recv_sys.recovery_start > log_sys.next_checkpoint_lsn) {
+			sql_print_error("InnoDB: impossible "
+					"innodb_log_recovery_start=%" PRIu64
+					">%" PRIu64,
+					recv_sys.recovery_start,
+					log_sys.next_checkpoint_lsn);
+			goto err_exit;
+		} else {
+			log_sys.last_checkpoint_lsn = recv_sys.recovery_start
+				? recv_sys.recovery_start
+				: log_sys.next_checkpoint_lsn;
+		}
 		const bool rewind = recv_sys.lsn
-			!= log_sys.next_checkpoint_lsn;
-		log_sys.last_checkpoint_lsn = log_sys.next_checkpoint_lsn;
+			!= log_sys.last_checkpoint_lsn;
 		parser[false] = get_parse_mmap<recv_sys_t::store::NO>();
 		parser[true] = get_parse_mmap<recv_sys_t::store::YES>();
 		recv_scan_log(false, parser);

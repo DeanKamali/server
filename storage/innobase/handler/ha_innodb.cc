@@ -19456,9 +19456,9 @@ static MYSQL_SYSVAR_CONST_STR(log_archive_path, log_sys.archive_path,
   PLUGIN_VAR_RQCMDARG,
   "Path to the log archive", NULL, innodb_log_archive_path_update, NULL);
 
-static MYSQL_SYSVAR_UINT64_T(log_recovery_start, recv_sys.archive_start,
+static MYSQL_SYSVAR_UINT64_T(log_recovery_start, recv_sys.recovery_start,
   PLUGIN_VAR_RQCMDARG | PLUGIN_VAR_READONLY,
-  "checkpoint LSN to start log archive recovery from",
+  "checkpoint LSN to start recovery from (0=automatic)",
   nullptr, nullptr, 0, 0, std::numeric_limits<ulonglong>::max(), 0);
 
 static MYSQL_SYSVAR_UINT64_T(log_recovery_target, recv_sys.rpo,

@@ -8,6 +8,9 @@ INSERT INTO t2 VALUES(1);
 # Kill the server
 SELECT * FROM t2;
 ERROR 42S02: Table 'test.t2' doesn't exist in engine
+SELECT * FROM t2;
+ERROR 42000: Unknown storage engine 'InnoDB'
+FOUND 1 /InnoDB: impossible innodb_log_recovery_start=/ in mysqld.1.err
 # Corrupt the pages
 SELECT * FROM t1;
 ERROR 42000: Unknown storage engine 'InnoDB'
