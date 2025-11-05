@@ -617,6 +617,8 @@ log_t::resize_start_status log_t::resize_start(os_offset_t size, void *thd)
     status= RESIZE_NO_CHANGE;
   else if (resize_in_progress())
     status= RESIZE_IN_PROGRESS;
+  else if (archive)
+    status= RESIZE_NO_CHANGE; // FIXME: implement the size change
   else
   {
     lsn_t start_lsn;
