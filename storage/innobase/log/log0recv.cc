@@ -57,6 +57,8 @@ Created 9/20/1997 Heikki Tuuri
 
 /** The recovery system */
 recv_sys_t	recv_sys;
+/** 0 or the first LSN that would conflict with innodb_log_recovery_target */
+static lsn_t recv_sys_rpo_exceeded;
 /** TRUE when recv_init_crash_recovery() has been called. */
 bool	recv_needed_recovery;
 #ifdef UNIV_DEBUG
@@ -2434,7 +2436,7 @@ recv_sys_t::parse_mtr_result log_parse_start(source &l, unsigned nonce)
 
   if (recv_sys.rpo && recv_sys.rpo < end_lsn)
   {
-    recv_sys.scanned_lsn= end_lsn;
+    recv_sys_rpo_exceeded= end_lsn;
     return recv_sys_t::GOT_EOF;
   }
 
@@ -4773,6 +4775,7 @@ dberr_t recv_recovery_from_checkpoint_start()
 	}
 
 	recv_sys.recovery_on = true;
+	recv_sys_rpo_exceeded = 0;
 
 	log_sys.latch.wr_lock(SRW_LOCK_CALL);
 	log_sys.set_capacity();
@@ -4835,7 +4838,7 @@ read_only_reported:
 		if (!recv_needed_recovery) {
 		} else if (srv_read_only_mode) {
 			goto read_only_recovery;
-		} else if (recv_sys_invalid_rpo(recv_sys.scanned_lsn)) {
+		} else if (recv_sys_invalid_rpo(recv_sys_rpo_exceeded)) {
 			goto read_only_reported;
 		}
 
