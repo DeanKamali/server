@@ -950,6 +950,7 @@ static SHOW_VAR innodb_status_variables[]= {
   {"lsn_flushed", &export_vars.innodb_lsn_flushed, SHOW_ULONGLONG},
   {"lsn_last_checkpoint", &export_vars.innodb_lsn_last_checkpoint,
    SHOW_ULONGLONG},
+  {"lsn_archived", &log_sys.archived_lsn, SHOW_ULONGLONG},
   {"master_thread_active_loops", &srv_main_active_loops, SHOW_SIZE_T},
   {"master_thread_idle_loops", &srv_main_idle_loops, SHOW_SIZE_T},
   {"max_trx_id", &export_vars.innodb_max_trx_id, SHOW_ULONGLONG},
@@ -19431,8 +19432,7 @@ static MYSQL_SYSVAR_BOOL(data_file_write_through, fil_system.write_through,
   nullptr, innodb_data_file_write_through_update, FALSE);
 
 static void innodb_log_archive_update(THD *, st_mysql_sys_var*,
-                                      void *, const void *save)
-  noexcept
+                                      void *, const void *save) noexcept
 {
   const my_bool archive= *static_cast<const my_bool*>(save);
   log_sys.latch.rd_lock(SRW_LOCK_CALL);
@@ -19441,6 +19441,7 @@ static void innodb_log_archive_update(THD *, st_mysql_sys_var*,
                     "SET GLOBAL innodb_log_file_size is in progress", MYF(0));
   else
     log_sys.archive= archive;
+  log_sys.archived_lsn= 0; // FIXME: remove this
   log_sys.latch.rd_unlock();
 }
 

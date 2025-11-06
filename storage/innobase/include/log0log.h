@@ -247,13 +247,16 @@ public:
   lsn_t (*writer)() noexcept;
   /** next checkpoint LSN (protected by latch.wr_lock()) */
   lsn_t next_checkpoint_lsn;
+  /** start of archived log, or 0 (proteted by latch.wr_lock()) */
+  lsn_t archived_lsn;
 
   /** Log file */
   log_file_t log;
 private:
   /** Log file being constructed during resizing; protected by latch */
   log_file_t resize_log;
-  /** size of resize_log; protected by latch */
+  /** size of resize_log, or the requested innodb_log_file_size
+  of the next file created if archive==TRUE; protected by latch */
   lsn_t resize_target;
   /** Buffer for writing to resize_log; @see buf */
   byte *resize_buf;

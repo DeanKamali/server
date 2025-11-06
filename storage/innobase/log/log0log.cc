@@ -618,7 +618,13 @@ log_t::resize_start_status log_t::resize_start(os_offset_t size, void *thd)
   else if (resize_in_progress())
     status= RESIZE_IN_PROGRESS;
   else if (archive)
-    status= RESIZE_NO_CHANGE; // FIXME: implement the size change
+  {
+    status= RESIZE_NO_CHANGE;
+    /* When the current log becomes full and a new archivable log file
+    is being created, it will be of this size. At that point we will assign
+    file_size= resize_target, resize_target= 0; */
+    resize_target= size;
+  }
   else
   {
     lsn_t start_lsn;
