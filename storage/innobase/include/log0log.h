@@ -273,8 +273,7 @@ public:
   uint write_size;
   /** format of the redo log: e.g., FORMAT_10_8 */
   uint32_t format;
-  /** the current value of innodb_log_archive;
-  protected by LOCK_global_system_variable and shared latch */
+  /** the current value of innodb_log_archive; protected by latch.wr_lock() */
   my_bool archive;
   /** whether the memory-mapped interface is enabled for the log */
   my_bool log_mmap;

@@ -52,12 +52,14 @@ void mtr_t::finisher_update()
   if (log_sys.is_mmap())
   {
     commit_logger= mtr_t::commit_log<true>;
-    finisher= mtr_t::finish_writer<true>;
+    finisher= log_sys.archive
+      ? mtr_t::finish_writer<ARCHIVED_MMAP>
+      : mtr_t::finish_writer<CIRCULAR_MMAP>;
     return;
   }
   commit_logger= mtr_t::commit_log<false>;
 #endif
-  finisher= mtr_t::finish_writer<false>;
+  finisher= mtr_t::finish_writer<WRITE_NORMAL>;
 }
 
 void mtr_memo_slot_t::release() const
@@ -914,6 +916,7 @@ ATTRIBUTE_COLD void log_t::append_prepare_wait(bool late, bool ex) noexcept
     {
       ut_ad(lsn - get_flushed_lsn(std::memory_order_relaxed) < capacity() ||
             overwrite_warned);
+      ut_a(!archive); // FIXME: create, allocate and attach a new file
       persist(lsn);
     }
 #endif
@@ -1188,7 +1191,7 @@ inline void log_t::append(byte *&d, const void *s, size_t size) noexcept
   d+= size;
 }
 
-template<bool mmap>
+template<mtr_t::finish_writing how>
 std::pair<lsn_t,mtr_t::page_flush_ahead>
 mtr_t::finish_writer(mtr_t *mtr, size_t len)
 {
@@ -1197,17 +1200,21 @@ mtr_t::finish_writer(mtr_t *mtr, size_t len)
   ut_ad(mtr->is_logged());
   ut_ad(mtr->m_latch_ex ? log_sys.latch_have_wr() : log_sys.latch_have_rd());
   ut_ad(len < recv_sys.MTR_SIZE_MAX);
+  ut_ad(how == WRITE_NORMAL || log_sys.archive == (how == ARCHIVED_MMAP));
 
   const size_t size{mtr->m_commit_lsn ? 5U + 8U : 5U};
   std::pair<lsn_t, byte*> start=
-    log_sys.append_prepare<mmap>(len, mtr->m_latch_ex);
+    log_sys.append_prepare<how != WRITE_NORMAL>(len, mtr->m_latch_ex);
 
-  if (!mmap)
+  if (how == WRITE_NORMAL ||
+      UNIV_LIKELY(start.second + len <= &log_sys.buf[log_sys.file_size]))
   {
     for (const mtr_buf_t::block_t &b : mtr->m_log)
       log_sys.append(start.second, b.begin(), b.used());
 
+#ifdef HAVE_PMEM
   write_trailer:
+#endif
     *start.second++= log_sys.get_sequence_bit(start.first + len - size);
     if (mtr->m_commit_lsn)
     {
@@ -1220,12 +1227,10 @@ mtr_t::finish_writer(mtr_t *mtr, size_t len)
   }
   else
   {
-    if (UNIV_LIKELY(start.second + len <= &log_sys.buf[log_sys.file_size]))
-    {
-      for (const mtr_buf_t::block_t &b : mtr->m_log)
-        log_sys.append(start.second, b.begin(), b.used());
-      goto write_trailer;
-    }
+#ifndef HAVE_PMEM
+    static_assert(how == WRITE_NORMAL, "");
+#else
+    ut_a(how == CIRCULAR_MMAP); // FIXME: implement ARCHIVED_MMAP
     for (const mtr_buf_t::block_t &b : mtr->m_log)
     {
       size_t size{b.used()};
@@ -1263,9 +1268,13 @@ mtr_t::finish_writer(mtr_t *mtr, size_t len)
     start.second= log_sys.buf +
       ((size >= size_left) ? log_sys.START_OFFSET : log_sys.file_size) +
       (size - size_left);
+#endif
   }
 
-  log_sys.resize_write(start.first, start.second, len, size);
+  if (how == ARCHIVED_MMAP)
+    ut_ad(!log_sys.resize_in_progress());
+  else
+    log_sys.resize_write(start.first, start.second, len, size);
 
   mtr->m_commit_lsn= start.first + len;
   return {start.first, log_close(mtr->m_commit_lsn)};

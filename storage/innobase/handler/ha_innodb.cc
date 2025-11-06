@@ -19435,14 +19435,19 @@ static void innodb_log_archive_update(THD *, st_mysql_sys_var*,
                                       void *, const void *save) noexcept
 {
   const my_bool archive= *static_cast<const my_bool*>(save);
-  log_sys.latch.rd_lock(SRW_LOCK_CALL);
-  if (archive && UNIV_UNLIKELY(log_sys.resize_in_progress() != 0))
+  log_sys.latch.wr_lock(SRW_LOCK_CALL);
+  const lsn_t resizing{log_sys.resize_in_progress()};
+  if (archive && UNIV_UNLIKELY(resizing != 0))
     my_printf_error(ER_WRONG_USAGE,
                     "SET GLOBAL innodb_log_file_size is in progress", MYF(0));
   else
+  {
     log_sys.archive= archive;
-  log_sys.archived_lsn= 0; // FIXME: remove this
-  log_sys.latch.rd_unlock();
+    if (!resizing)
+      mtr_t::finisher_update();
+  }
+  log_sys.archived_lsn= 0; // FIXME: move this to log_t::write_checkpoint()
+  log_sys.latch.wr_unlock();
 }
 
 static MYSQL_SYSVAR_BOOL(log_archive, log_sys.archive,

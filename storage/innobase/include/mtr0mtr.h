@@ -710,12 +710,22 @@ private:
   @return {start_lsn,flush_ahead} */
   std::pair<lsn_t,page_flush_ahead> do_write();
 
+  /** How to write log */
+  enum finish_writing {
+    /** circular memory-mapped writing when log_sys.is_mmap() */
+    CIRCULAR_MMAP,
+    /** memory-mapped log for log_sys.archive */
+    ARCHIVED_MMAP,
+    /** normal writing !log_sys.is_mmap() */
+    WRITE_NORMAL
+  };
+
   /** Append the redo log records to the redo log buffer.
-  @tparam mmap log_sys.is_mmap()
+  @tparam how  how to write
   @param mtr   mini-transaction
   @param len   number of bytes to write
   @return {start_lsn,flush_ahead} */
-  template<bool mmap> static
+  template<finish_writing how> static
   std::pair<lsn_t,page_flush_ahead> finish_writer(mtr_t *mtr, size_t len);
 
   /** The applicable variant of commit_log() */
