@@ -18,8 +18,8 @@
 #ifndef RPL_INFO_FILE_HH
 #define RPL_INFO_FILE_HH
 
-#include <functional>  // superclass of InfoFile::mem_fn
 #include <charconv>    // std::from/to_chars and other helpers
+#include <functional>  // superclass of InfoFile::mem_fn
 #include <my_sys.h>    // IO_CACHE
 #include <my_global.h> // FN_REFLEN
 #include "slave.h"     // init_strvar_from_file

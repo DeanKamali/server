@@ -269,6 +269,8 @@ struct MasterInfoFile: InfoFile
       }
       return mode;
     }
+    operator bool()
+    { return operator enum_master_use_gtid() != enum_master_use_gtid::NO; }
     auto &operator=(enum_master_use_gtid mode)
     {
       this->mode= mode;

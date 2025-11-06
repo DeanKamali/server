@@ -45,15 +45,14 @@ rpl_slave_state *rpl_global_gtid_slave_state;
 gtid_waiting rpl_global_gtid_waiting;
 
 Relay_log_info::Relay_log_info(bool is_slave_recovery, const char* thread_name)
-  :Slave_reporting_capability(thread_name),
+  :RelayLogInfoFile(), Slave_reporting_capability(thread_name),
    replicate_same_server_id(::replicate_same_server_id),
    info_fd(-1), cur_log_fd(-1), relay_log(&sync_relaylog_period),
    sync_counter(0), is_relay_log_recovery(is_slave_recovery),
    save_temporary_tables(0),
    mi(0), inuse_relaylog_list(0), last_inuse_relaylog(0),
    cur_log_old_open_count(0), error_on_rli_init_info(false),
-   group_relay_log_pos(0), event_relay_log_pos(0),
-   group_master_log_pos(0), log_space_total(0), ignore_log_space_limit(0),
+   event_relay_log_pos(0), log_space_total(0), ignore_log_space_limit(0),
    sql_thread_caught_up(true),
    last_master_timestamp(0), newest_master_timestamp(0), slave_timestamp(0),
    slave_skip_counter(0),
@@ -62,12 +61,12 @@ Relay_log_info::Relay_log_info(bool is_slave_recovery, const char* thread_name)
    slave_running(MYSQL_SLAVE_NOT_RUN), until_condition(UNTIL_NONE),
    until_log_pos(0), is_until_before_gtids(false),
    retried_trans(0), executed_entries(0),
-   last_trans_retry_count(0), sql_delay(0), sql_delay_end(0),
+   last_trans_retry_count(0), sql_delay_end(0),
    until_relay_log_names_defer(false),
    m_flags(0)
 {
   DBUG_ENTER("Relay_log_info::Relay_log_info");
-
+  group_relay_log_pos= group_master_log_pos= sql_delay= 0;
   relay_log.is_relay_log= TRUE;
   relay_log_state.init();
 #ifdef HAVE_PSI_INTERFACE

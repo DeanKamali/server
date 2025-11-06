@@ -26,23 +26,20 @@
 
 #ifdef HAVE_REPLICATION
 
-#define DEFAULT_CONNECT_RETRY 60
-
 static void init_master_log_pos(Master_info* mi);
 
 Master_info::Master_info(LEX_CSTRING *connection_name_arg,
-                         bool is_slave_recovery)
-  :Slave_reporting_capability("I/O"),
-   ssl(1), ssl_verify_server_cert(1), fd(-1), io_thd(0),
-   rli(is_slave_recovery), port(MYSQL_PORT),
+                         bool is_slave_recovery):
+   MasterInfoFile(ignore_server_ids, domain_id_filter.m_domain_ids[0],
+                                     domain_id_filter.m_domain_ids[1]),
+   Slave_reporting_capability("I/O"), fd(-1), io_thd(0), rli(is_slave_recovery),
    checksum_alg_before_fd(BINLOG_CHECKSUM_ALG_UNDEF),
-   connect_retry(DEFAULT_CONNECT_RETRY), retry_count(master_retry_count),
    connects_tried(0), inited(0), abort_slave(0),
    slave_running(MYSQL_SLAVE_NOT_RUN), slave_run_id(0),
    clock_diff_with_master(0),
-   sync_counter(0), heartbeat_period(0), received_heartbeats(0),
+   sync_counter(0), received_heartbeats(0),
    master_id(0), prev_master_id(0),
-   using_gtid(USE_GTID_SLAVE_POS), events_queued_since_last_gtid(0),
+   events_queued_since_last_gtid(0),
    gtid_reconnect_event_skip_count(0), gtid_event_seen(false),
    in_start_all_slaves(0), in_stop_all_slaves(0), in_flush_all_relay_logs(0),
    users(0), killed(0),
@@ -50,10 +47,8 @@ Master_info::Master_info(LEX_CSTRING *connection_name_arg,
    semi_sync_reply_enabled(0)
 {
   char *tmp;
+  port= MYSQL_PORT;
   host[0] = 0; user[0] = 0; password[0] = 0;
-  ssl_ca[0]= 0; ssl_capath[0]= 0; ssl_cert[0]= 0;
-  ssl_cipher[0]= 0; ssl_key[0]= 0;
-  ssl_crl[0]= 0; ssl_crlpath[0]= 0;
 
   /*
     Store connection name and lower case connection name
@@ -197,49 +192,15 @@ void Master_info::clear_in_memory_info(bool all)
   }
 }
 
-
-const char *
-Master_info::using_gtid_astext(enum enum_using_gtid arg)
-{
-  switch (arg)
-  {
-  case USE_GTID_NO:
-    return "No";
-  case USE_GTID_SLAVE_POS:
-    return "Slave_Pos";
-  default:
-    DBUG_ASSERT(arg == USE_GTID_CURRENT_POS);
-    return "Current_Pos";
-  }
-}
-
-
 void init_master_log_pos(Master_info* mi)
 {
   DBUG_ENTER("init_master_log_pos");
-
   mi->master_log_name[0] = 0;
   mi->master_log_pos = BIN_LOG_HEADER_SIZE;             // skip magic number
-  if (mi->master_supports_gtid)
-  {
-    mi->using_gtid= Master_info::USE_GTID_SLAVE_POS;
-  }
   mi->gtid_current_pos.reset();
   mi->events_queued_since_last_gtid= 0;
   mi->gtid_reconnect_event_skip_count= 0;
   mi->gtid_event_seen= false;
-
-  /* 
-    always request heartbeat unless master_heartbeat_period is set
-    explicitly zero.  Here is the default value for heartbeat period
-    if CHANGE MASTER did not specify it.  (no data loss in conversion
-    as hb period has a max)
-  */
-  mi->heartbeat_period= (float) MY_MIN(SLAVE_MAX_HEARTBEAT_PERIOD,
-                                    (slave_net_timeout/2.0));
-  DBUG_ASSERT(mi->heartbeat_period > (float) 0.001
-              || mi->heartbeat_period == 0);
-
   DBUG_VOID_RETURN;
 }
 
@@ -668,7 +629,7 @@ file '%s')", fname);
     }
 
 #ifndef HAVE_OPENSSL
-    if (ssl)
+    if (mi->master_ssl)
       sql_print_warning("SSL information in the master info file "
                       "('%s') are ignored because this MySQL slave was "
                       "compiled without SSL support.", fname);
@@ -1888,7 +1849,7 @@ bool Domain_id_filter::update_ids(DYNAMIC_ARRAY *do_ids,
     return true;
   }
 
-  if (using_gtid == Master_info::USE_GTID_NO &&
+  if (!using_gtid &&
       (!do_list_empty || !ignore_list_empty))
   {
     sql_print_error("DO_DOMAIN_IDS or IGNORE_DOMAIN_IDS lists can't be "
@@ -2115,14 +2076,15 @@ void setup_mysql_connection_for_master(MYSQL *mysql, Master_info *mi,
   mysql_options(mysql, MYSQL_OPT_READ_TIMEOUT, (char *) &timeout);
 
 #ifdef HAVE_OPENSSL
-  if (mi->ssl)
+  if (mi->master_ssl)
   {
-    mysql_ssl_set(mysql, mi->ssl_key, mi->ssl_cert, mi->ssl_ca, mi->ssl_capath,
-                  mi->ssl_cipher);
-    mysql_options(mysql, MYSQL_OPT_SSL_CRL, mi->ssl_crl);
-    mysql_options(mysql, MYSQL_OPT_SSL_CRLPATH, mi->ssl_crlpath);
+    mysql_ssl_set(mysql,
+                  mi->master_ssl_key, mi->master_ssl_cert, mi->master_ssl_ca,
+                  mi->master_ssl_capath, mi->master_ssl_cipher);
+    mysql_options(mysql, MYSQL_OPT_SSL_CRL, mi->master_ssl_crl);
+    mysql_options(mysql, MYSQL_OPT_SSL_CRLPATH, mi->master_ssl_crlpath);
     mysql_options(mysql, MYSQL_OPT_SSL_VERIFY_SERVER_CERT,
-                  &mi->ssl_verify_server_cert);
+                  &mi->master_ssl_verify_server_cert);
   }
   else
 #endif
