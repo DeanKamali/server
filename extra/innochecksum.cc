@@ -48,6 +48,7 @@ The parts not included are excluded by #ifndef UNIV_INNOCHECKSUM. */
 #include "buf0buf.h"             /* buf_page_is_corrupted */
 #include "page0zip.h"            /* page_zip_*() */
 #include "trx0undo.h"            /* TRX_* */
+#include "trx0sys.h"             /* TRX_SYS_DOUBLEWRITE* */
 #include "ut0crc32.h"            /* ut_crc32_init() */
 #include "fil0crypt.h"           /* fil_space_verify_crypt_checksum */
 
@@ -79,6 +80,8 @@ static ulint extent_size;
 static ulint xdes_size;
 ulong srv_page_size;
 ulong srv_page_size_shift;
+static uint32_t dblwr_1;
+static uint32_t dblwr_2;
 /* Current page number (0 based). */
 uint32_t		cur_page_num;
 /* Current space. */
@@ -550,24 +553,14 @@ is_page_corrupted(
 	return(is_corrupted);
 }
 
-/********************************************//*
- Check if page is doublewrite buffer or not.
- @param [in] page	buffer page
-
- @retval true  if page is doublewrite buffer otherwise false.
-*/
-static
-bool
-is_page_doublewritebuffer(
-	const byte*	page)
+/** Check current page number is a doublwrite buffer or not
+@retval true if current page is doublewrite buffer otherwise false */
+static bool is_page_doublewritebuffer()
 {
-	if ((cur_page_num >= extent_size)
-		&& (cur_page_num < extent_size * 3)) {
-		/* page is doublewrite buffer. */
-		return (true);
-	}
-
-	return (false);
+  if (cur_space != 0) return false;
+  const uint32_t extent{static_cast<uint32_t>(
+    cur_page_num & ~(extent_size - 1))};
+  return extent && (extent == dblwr_1 || extent == dblwr_2);
 }
 
 /*******************************************************//*
@@ -794,6 +787,12 @@ parse_page(
 	str = skip_page ? "Double_write_buffer" : "-";
 	page_no = mach_read_from_4(page + FIL_PAGE_OFFSET);
 	if (skip_freed_pages) {
+
+		/** Skip doublewrite pages when -r is enabled */
+		if (is_page_doublewritebuffer()) {
+			return;
+		}
+
 		const byte *des= xdes + XDES_ARR_OFFSET +
 			xdes_size * ((page_no & (physical_page_size - 1))
 				     / extent_size);
@@ -987,6 +986,18 @@ parse_page(
 		if (file) {
 			fprintf(file, "#::" UINT32PF "\t\t|\t\tTransaction system "
 				"page\t\t|\t%s\n", cur_page_num, str);
+		}
+
+		if (cur_space == 0 &&
+		    (mach_read_from_4(page + TRX_SYS_DOUBLEWRITE +
+				      TRX_SYS_DOUBLEWRITE_MAGIC) ==
+		     TRX_SYS_DOUBLEWRITE_MAGIC_N)) {
+			dblwr_1 = mach_read_from_4(
+					page + TRX_SYS_DOUBLEWRITE +
+					TRX_SYS_DOUBLEWRITE_BLOCK1);
+			dblwr_2 = mach_read_from_4(
+					page + TRX_SYS_DOUBLEWRITE +
+					TRX_SYS_DOUBLEWRITE_BLOCK2);
 		}
 		break;
 
@@ -1633,7 +1644,8 @@ int main(
 			allow_mismatches = tmp_allow_mismatches;
 		}
 
-		if ((exit_status = rewrite_checksum(
+		if (!is_page_doublewritebuffer() &&
+		    (exit_status = rewrite_checksum(
 					filename, fil_in, buf,
 					&pos, is_encrypted, flags))) {
 			goto my_exit;
@@ -1831,7 +1843,7 @@ unexpected_eof:
 first_non_zero:
 			if (is_system_tablespace) {
 				/* enable when page is double write buffer.*/
-				skip_page = is_page_doublewritebuffer(buf);
+				skip_page = is_page_doublewritebuffer();
 			} else {
 				skip_page = false;
 			}

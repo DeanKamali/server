@@ -1,0 +1,12 @@
+CREATE TABLE t1(a INT PRIMARY KEY) ENGINE=InnoDB STATS_PERSISTENT=0;
+SET GLOBAL innodb_log_checkpoint_now=ON;
+FLUSH TABLE t1 FOR EXPORT;
+UNLOCK TABLES;
+INSERT INTO t1 SET a=1;
+FLUSH TABLE t1 FOR EXPORT;
+UNLOCK TABLES;
+# Skip InnoDB Doublewrite Buffer
+Should not exist when summary excludes dblwr pages
+Should exist when summary includes dblwr pages
+# restart
+DROP TABLE t1;

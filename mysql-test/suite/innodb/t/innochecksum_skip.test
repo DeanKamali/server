@@ -1,0 +1,78 @@
+--source include/have_innodb.inc
+--source include/not_embedded.inc
+--source include/have_debug.inc
+--source include/have_sequence.inc
+let MYSQLD_DATADIR= `SELECT @@datadir`;
+CREATE TABLE t1(a INT PRIMARY KEY) ENGINE=InnoDB STATS_PERSISTENT=0;
+SET GLOBAL innodb_log_checkpoint_now=ON;
+FLUSH TABLE t1 FOR EXPORT;
+UNLOCK TABLES;
+INSERT INTO t1 SET a=1;
+FLUSH TABLE t1 FOR EXPORT;
+UNLOCK TABLES;
+
+let INDEX_ID= `select INDEX_ID FROM INFORMATION_SCHEMA.INNODB_SYS_INDEXES WHERE TABLE_ID = (SELECT TABLE_ID FROM INFORMATION_SCHEMA.INNODB_SYS_TABLES WHERE NAME="test/t1")`;
+
+let $shutdown_timeout=0;
+--source include/shutdown_mysqld.inc
+let $resultlog=$MYSQLTEST_VARDIR/tmp/result.log;
+let $resultlog_1=$MYSQLTEST_VARDIR/tmp/result_1.log;
+
+exec $INNOCHECKSUM -S -r $MYSQLD_DATADIR/ibdata1 > $resultlog;
+--echo # Skip InnoDB Doublewrite Buffer
+exec $INNOCHECKSUM -S $MYSQLD_DATADIR/ibdata1 > $resultlog_1;
+
+perl;
+use strict;
+use warnings;
+use File::Spec::Functions qw(catfile);
+
+sub check_index_in_file {
+    my ($filename, $search_id, $file_desc, $expect_found) = @_;
+    my $found = 0;
+    open(my $fh, '<', $filename) or die "Could not open file '$filename': $!\n";
+    while (my $line = <$fh>) {
+        chomp $line;
+        # Skip empty lines and header lines
+        next if $line =~ /^\s*$/;
+        next if $line =~ /index_id.*#pages/;  # Skip header line
+        # Split the line by whitespace
+        my @fields = grep { $_ ne '' } split(/\s+/, $line);
+        next unless @fields;  # Skip if no fields
+        # The first field is the index_id
+        my $current_id = $fields[0];
+        # Check if this is the ID we're looking for
+        if (defined $current_id && $current_id eq $search_id) {
+            $found = 1;
+            last;
+        }
+    }
+    close $fh;
+
+    if ($found != $expect_found) {
+        print "\n=== UNEXPECTED RESULT - SHOWING FILE CONTENTS ($file_desc) ===\n";
+        open($fh, '<', $filename) or die "Cannot reopen file: $!";
+        print while <$fh>;
+        close $fh;
+        print "=== END OF FILE ===\n\n";
+    }
+}
+
+my $search_id = $ENV{'INDEX_ID'};
+
+# Define file paths
+my $resultlog = catfile($ENV{'MYSQLTEST_VARDIR'}, 'tmp', 'result.log');
+my $resultlog_1 = catfile($ENV{'MYSQLTEST_VARDIR'}, 'tmp', 'result_1.log');
+
+# Check both files
+print "Should not exist when summary excludes dblwr pages\n";
+check_index_in_file($resultlog, $search_id, 'result.log', 0);
+
+print "Should exist when summary includes dblwr pages\n";
+check_index_in_file($resultlog_1, $search_id, 'result_1.log', 1);
+EOF
+remove_file $resultlog;
+remove_file $resultlog_1;
+let $shutdown_timeout=;
+--source include/start_mysqld.inc
+DROP TABLE t1;
