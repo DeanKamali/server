@@ -6390,6 +6390,7 @@ int ha_partition::read_range_first(const key_range *start_key,
 {
   int error;
   DBUG_ENTER("ha_partition::read_range_first");
+  handler::set_end_range(end_key, RANGE_SCAN_ASC);
 
   m_ordered= sorted;
   eq_range= eq_range_arg;
