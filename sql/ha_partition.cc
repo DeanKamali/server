@@ -7467,6 +7467,60 @@ end_dont_reset_start_part:
   DBUG_RETURN(result);
 }
 
+/*
+  Returns true if for a PARTITION BY RANGE table there is no need for
+  priority queue for index scan. In this case an unordered index scan
+  can be used.
+
+  This happens if
+
+  Case 1. The PARTITION BY RANGE expression is a col that is a prefix
+  of the active index and we are in
+  index_first/index_read_map/read_range_first, OR
+
+  Case 2. The PARTITION BY RANGE expression is col1 and the active
+  index is (prefix_cols, col1, ...), and we are in
+  index_read_map(prefix_cols=prefix_value) or
+  read_range_first(start_key= {prefix_value, ...},
+  end_key={prefix_value, ...})
+*/
+bool ha_partition::ordered_scan_for_range_not_needed()
+{
+  Field *part_field;
+  if (m_index_scan_type != partition_index_first &&
+      m_index_scan_type != partition_index_read &&
+      m_index_scan_type != partition_read_range)
+    return false;
+  if (m_part_info->part_type != RANGE_PARTITION || m_is_sub_partitioned)
+    return false;
+  if (m_part_info->part_expr &&
+      m_part_info->part_expr->type() != Item::FIELD_ITEM)
+    return false;
+  /* More than one column in PARTITION BY RANGE COLUMNS */
+  if (m_part_info->full_part_field_array[1])
+    return false;
+  part_field= m_part_info->full_part_field_array[0];
+  /* Case 1 */
+  if (m_curr_key_info[0]->key_part[0].field == part_field)
+    return true;
+  /* Case 2 */
+  if (m_index_scan_type == partition_index_first)
+    return false;
+  for (uint i= 1; i < m_curr_key_info[0]->user_defined_key_parts; i++)
+    if (m_curr_key_info[0]->key_part[i].field == part_field)
+    {
+      key_part_map prefix= (1 << i) - 1;
+      if (m_index_scan_type == partition_index_read)
+        return m_start_key.keypart_map == prefix;
+      else                      /* partition_read_range */
+        return
+          (!m_start_key.key ||
+           (m_start_key.keypart_map & prefix) == prefix) &&
+          (!end_range ||
+           (end_range->keypart_map & prefix) == prefix);
+    }
+  return false;
+}
 
 /*
   Common routine to set up index scans
@@ -7542,6 +7596,12 @@ int ha_partition::partition_scan_set_up(uchar * buf, bool idx_read_flag)
       m_part_spec.start_part= start_part;
     DBUG_ASSERT(m_part_spec.start_part < m_tot_parts);
     m_ordered_scan_ongoing= m_ordered;
+    /*
+      Set unordered scan if priority queue is not needed. May be
+      overridden later e.g. if ORDER BY ... DESC
+    */
+    if (ordered_scan_for_range_not_needed())
+      m_ordered_scan_ongoing= false;
   }
   DBUG_ASSERT(m_part_spec.start_part < m_tot_parts);
   DBUG_ASSERT(m_part_spec.end_part < m_tot_parts);

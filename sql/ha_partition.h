@@ -459,6 +459,7 @@ private:
   /** This is one of the m_file-s that it guaranteed to be opened. */
   /**  It is set in open_read_partitions() */
   handler *m_file_sample;
+  bool ordered_scan_for_range_not_needed();
 public:
   handler **get_child_handlers()
   {
