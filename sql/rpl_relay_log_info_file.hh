@@ -40,4 +40,14 @@ struct RelayLogInfoFile: InfoFile
     &RelayLogInfoFile::read_master_log_pos,
     &RelayLogInfoFile::sql_delay
   };
+
+  bool load_from_file() override
+  {
+    return InfoFile::load_from_file(FIELDS_LIST, /* Exec_Master_Log_Pos */ 4);
+  }
+  void save_to_file() override
+  {
+    return InfoFile::save_to_file(FIELDS_LIST,
+                            FIELDS_LIST.size() + /* line count line */ 1);
+  }
 };

@@ -97,44 +97,8 @@ public:
   bool update_ids(DYNAMIC_ARRAY *do_ids, DYNAMIC_ARRAY *ignore_ids,
                   bool using_gtid);
 
-  /*
-    Serialize and store the ids from domain id lists into the thd's protocol
-    buffer.
-
-    @param thd [IN]                   thread handler
-
-    @retval void
-  */
-  void store_ids(THD *thd);
-  /* Same as above, but store the id's into a group of fields */
+  /// Serialize and store the ids from domain id lists into a group of fields.
   void store_ids(Field ***field);
-  /*
-    Initialize the given domain id list (DYNAMIC_ARRAY) with the
-    space-separated list of numbers from the specified IO_CACHE where
-    the first number is the total number of entries to follows.
-
-    @param f    [IN]                  IO_CACHE file
-    @param type [IN]                  domain id list type
-
-    @retval false                     Success
-            true                      Error
-  */
-  bool init_ids(IO_CACHE *f, enum_list_type type);
-
-  /*
-    Return the elements of the give domain id list type as string.
-
-    @param type [IN]                  domain id list type
-
-    @retval                           a string buffer storing the total number
-                                      of elements followed by the individual
-                                      elements (space-separated) in the
-                                      specified list.
-
-    Note: Its caller's responsibility to free the returned string buffer.
-  */
-  char *as_string(enum_list_type type);
-
 };
 
 
@@ -436,7 +400,6 @@ int flush_master_info(Master_info* mi,
                       bool need_lock_relay_log);
 void copy_filter_setting(Rpl_filter* dst_filter, Rpl_filter* src_filter);
 void update_change_master_ids(DYNAMIC_ARRAY *new_ids, DYNAMIC_ARRAY *old_ids);
-void prot_store_ids(THD *thd, DYNAMIC_ARRAY *ids);
 void field_store_ids(Field *field, DYNAMIC_ARRAY *ids);
 /*
   Multi master are handled trough this struct.

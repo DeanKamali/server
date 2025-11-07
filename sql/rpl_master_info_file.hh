@@ -20,8 +20,25 @@
 #include <string_view>   // Key type of @ref MasterInfoFile::FIELDS_MAP
 #include <unordered_set> // Parameter type of ChangeMaster::set_defaults() //?
 #include <optional>      // Storage type of @ref OptionalIntField
-//#include "sql_const.h"   // MAX_PASSWORD_LENGTH
+#include "sql_const.h"   // MAX_PASSWORD_LENGTH
 
+
+inline static constexpr uint32_t SLAVE_MAX_HEARTBEAT_PERIOD=
+  std::numeric_limits<uint32_t>::max() / 1000;
+
+/**
+  A three-way comparison function for using
+  sort_dynamic() and bsearch() on IDArrayField::array.
+  @return -1 if first argument is less, 0 if it equal to, or 1 if it is greater
+  than the second
+  @deprecated Use a sorted set, such as @ref std::set,
+  to save on explicitly calling those functions.
+*/
+inline static int change_master_id_cmp(const void *arg1, const void *arg2)
+{
+  const ulong &id1= *(const ulong *)arg1, &id2= *(const ulong *)arg2;
+  return (id2 > id1) - (id2 < id1);
+}
 
 /// enum for @ref MasterInfoFile::master_use_gtid
 enum struct enum_master_use_gtid { NO, CURRENT_POS, SLAVE_POS, DEFAULT };
@@ -33,6 +50,8 @@ inline const char *master_use_gtid_names[]=
   `mariadbd` Options for the `DEFAULT` values of @ref MasterInfoFile fields
   @{
 */
+/// Computes the `DEFAULT` value of @ref ::master_heartbeat_period
+extern uint slave_net_timeout;
 inline uint32_t master_connect_retry= 60;
 inline std::optional<uint32_t> master_heartbeat_period= std::nullopt;
 inline bool master_ssl= true;
@@ -149,22 +168,21 @@ struct MasterInfoFile: InfoFile
     bool load_from(IO_CACHE *file) override
     {
       /** Only three chars are required:
-      * One digit
-        (When base prefixes are not recognized in integer parsing,
-        anything with a leading `0` stops parsing
-        after converting the `0` to zero anyway.)
-      * the terminating `\n\0` as in IntegerLike::from_chars(IO_CACHE *, I &)
+        * One digit
+          (When base prefixes are not recognized in integer parsing,
+          anything with a leading `0` stops parsing
+          after converting the `0` to zero anyway.)
+        * the terminating `\n\0` as in IntegerLike::from_chars(IO_CACHE *, I &)
       */
       char buf[3];
-      if (my_b_gets(file, buf, 3))
-        switch (buf[0])
-        {
-          case '0':
-            value= NO;
-            return false;
-          case '1':
-            value= YES;
-            return false;
+      if (my_b_gets(file, buf, 3) && buf[1] == '\n')
+        switch (buf[0]) {
+        case '0':
+          value= NO;
+          return false;
+        case '1':
+          value= YES;
+          return false;
         }
       return true;
     }
@@ -172,7 +190,8 @@ struct MasterInfoFile: InfoFile
     { my_b_write_byte(file, operator bool() ? '1' : '0'); }
   };
 
-  /** ID Array field
+
+  /** @ref uint32_t Array field
     @deprecated
       Only one of `DO_DOMAIN_IDS` and `IGNORE_DOMAIN_IDS` can be active
       at a time, so giving them separate arrays, let alone field instances,
@@ -182,24 +201,86 @@ struct MasterInfoFile: InfoFile
   */
   struct IDArrayField: Persistent
   {
+    /// Array of `long`s (FIXME: Domain and Server IDs should be `uint32_t`s.)
     DYNAMIC_ARRAY &array;
     IDArrayField(DYNAMIC_ARRAY &array): array(array) {}
     operator DYNAMIC_ARRAY &() { return array; }
+    /// @pre @ref array is initialized
+
     bool load_from(IO_CACHE *file) override
-    { return init_dynarray_intvar_from_file(&array, file); }
-    /** Store the total number of elements followed by the individual elements.
-      Unlike the old `Domain_id_filter::as_string()`,
-      this implementation does not require allocating the heap temporarily.
-    */
+    {
+      uint32_t count;
+      size_t i;
+      /// +1 for the terminating delimiter
+      char buf[IntIOCache::BUF_SIZE<uint32_t> + 1];
+      for (i=0; i < sizeof(buf); ++i)
+        switch (int c= my_b_get(file)) {
+        case my_b_EOF:
+          return true;
+        case ' ': // End of Field
+        case '\n': // End of Line
+          goto break_for1;
+        default:
+          buf[i]= c;
+        }
+      break_for1:
+      /*
+        * std::from_chars() fails if `count` will overflow in any way.
+        * exclusive end index of the string = size
+      */
+      std::from_chars_result result= std::from_chars(buf, &buf[i], count);
+      if (result.ec != IntIOCache::ERRC_OK)
+        return true;
+      // Reserve enough elements ahead of time.
+      if (allocate_dynamic(&array, count))
+        return true;
+      while (count--)
+      {
+        uint32_t value;
+        /*
+          Check that the previous number ended with a ` `,
+          not `\n` or anything else.
+        */
+        if (*(result.ptr) != ' ')
+          return true;
+        for (i=0; i < sizeof(buf); ++i)
+          /*
+            Bottlenecks from repeated IO does not affect the
+            performance of reading char by char thanks to the cache.
+          */
+          switch (int c= my_b_get(file)) {
+          case my_b_EOF:
+            return true;
+          case ' ': // End of Field
+          case '\n': // End of Line
+            goto break_for2;
+          default:
+            buf[i]= c;
+          }
+        break_for2:
+        result= std::from_chars(buf, &buf[i], value);
+        if (result.ec != IntIOCache::ERRC_OK)
+          return true;
+        ulong id= value;
+        if (insert_dynamic(&array, (uchar *)&id))
+        {
+          DBUG_ASSERT(!"insert_dynamic(IDArrayField.array)");
+          return true;
+        }
+      }
+      // Check that the last number ended with a `\n`, not ` ` or anything else.
+      if (*(result.ptr) != '\n')
+        return true;
+      sort_dynamic(&array, change_master_id_cmp); // to be safe
+      return false;
+    }
+
+    /// Store the total number of elements followed by the individual elements.
     void save_to(IO_CACHE *file) override
     {
       IntIOCache::to_chars(file, array.elements);
       for (size_t i= 0; i < array.elements; ++i)
       {
-        /**
-          matches the type of the array
-          (FIXME: Domain and Server IDs should be `uint32_t`s.)
-        */
         ulong id;
         get_dynamic(&array, &id, i);
         my_b_write_byte(file, ' ');
@@ -291,11 +372,12 @@ struct MasterInfoFile: InfoFile
     bool load_from(IO_CACHE *file) override
     {
       /**
-        Only two chars are required for the enum,
+        Only 3 chars are required for the enum,
         similar to @ref OptionalBoolField::load_from()
       */
-      char buf[2];
-      if (!my_b_gets(file, buf, 2) ||
+      char buf[3];
+      if (!my_b_gets(file, buf, 3) ||
+          buf[1] != '\n' ||
           buf[0] > /* SLAVE_POS */ '2' || buf[0] < /* NO */ '0')
         return true;
       operator=(static_cast<enum_master_use_gtid>(buf[0] - '0'));
@@ -327,9 +409,9 @@ struct MasterInfoFile: InfoFile
     using OptionalField::operator=;
     operator uint32_t() override
     {
-      return is_default() ?
-        ::master_heartbeat_period.value_or(slave_net_timeout*500) :
-        *(OptionalField<uint32_t>::optional);
+      return is_default() ? ::master_heartbeat_period.value_or(
+        MY_MIN(slave_net_timeout*500ULL, SLAVE_MAX_HEARTBEAT_PERIOD)
+      ) : *(OptionalField<uint32_t>::optional);
     }
     bool load_from(IO_CACHE *file) override
     {
@@ -341,11 +423,11 @@ struct MasterInfoFile: InfoFile
         which there should not be unless the file is edited externally.
       */
       char buf[IntIOCache::BUF_SIZE<uint32_t> + 3];
-      size_t size= my_b_gets(file, buf, sizeof(buf));
-      if (!size ||
-          std::from_chars(buf, &buf[size], seconds,
+      size_t length= my_b_gets(file, buf, sizeof(buf));
+      if (!length ||
+          std::from_chars(buf, &buf[length], seconds,
                           std::chars_format::fixed).ec != IntIOCache::ERRC_OK ||
-          seconds < 0 || seconds > SLAVE_MAX_HEARTBEAT_PERIOD) // 2**32 / 1000
+          seconds < 0 || seconds > SLAVE_MAX_HEARTBEAT_PERIOD)
         return true;
       operator=(seconds / 1000);
       return false;
@@ -447,4 +529,91 @@ struct MasterInfoFile: InfoFile
       if (static_cast<bool>(mem_fn))
         mem_fn(this).set_default();
   }
+
+  bool load_from_file() override
+  {
+    /// Repurpose the trailing `\0` spot to prepare for the `=` or `\n`
+    static constexpr size_t MAX_KEY_SIZE= sizeof("ssl_verify_server_cert");
+    if (InfoFile::load_from_file(FIELDS_LIST, /* MASTER_CONNECT_RETRY */ 7))
+      return true;
+    /*
+      InfoFile::load_from_file() is only for fixed-position entries.
+      Proceed with `key=value` lines for MariaDB 10.0 and above:
+      The "value" can then be read individually after consuming the`key=`.
+    */
+    /**
+      MariaDB 10.0 does not have the `END_MARKER` before any left-overs at
+      the end of the file, so ignore any non-first occurrences of a key.
+    */
+    auto seen= std::unordered_set<const char *>();
+    while (true)
+    {
+      bool found_equal= false;
+      char key[MAX_KEY_SIZE];
+      for (size_t i= 0; i < MAX_KEY_SIZE; ++i)
+      {
+        switch (int c= my_b_get(&file)) {
+        case my_b_EOF:
+          return i; // OK if no chars were read, or error if the line hits EOF.
+        case '=':
+          found_equal= true;
+        [[fallthrough]];
+        case '\n':
+        {
+          decltype(FIELDS_MAP)::const_iterator kv=
+            FIELDS_MAP.find(std::string_view(
+              key,
+              i // size = exclusive end index of the string
+            ));
+          // The "unknown" lines would be ignored to facilitate downgrades.
+          if (kv != FIELDS_MAP.cend()) // found
+          {
+            const char *key= kv->first.data();
+            if (key == END_MARKER)
+              return false;
+            else if (seen.insert(key).second) // if no previous insertion
+            {
+              Persistent &field= kv->second(this);
+              /*
+                If there is no `=value` part,
+                it means the field was saved with `DEFAULT` as its value.
+              */
+              if (found_equal ? field.load_from(&file) : field.set_default())
+                return true;
+            }
+          }
+          goto break_for;
+        }
+        default:
+          key[i]= c;
+        }
+      }
+      break_for:;
+    }
+  }
+
+  void save_to_file() override
+  {
+    // Write the line-based section with some reservations for MySQL additions
+    InfoFile::save_to_file(FIELDS_LIST, 33);
+    /* Write MariaDB `key=value` lines:
+      The "value" can then be written individually after generating the`key=`.
+    */
+    for (auto &[key, pm]: FIELDS_MAP)
+      if (static_cast<bool>(pm))
+      {
+        Persistent &field= pm(this);
+        my_b_write(&file, (const uchar *)key.data(), key.size());
+        if (!field.is_default())
+        {
+          my_b_write_byte(&file, '=');
+          field.save_to(&file);
+        }
+        my_b_write_byte(&file, '\n');
+      }
+    my_b_write(&file, (const uchar *)END_MARKER,
+              sizeof(END_MARKER) - /* the '\0' */ 1);
+    my_b_write_byte(&file, '\n');
+  }
+
 };
