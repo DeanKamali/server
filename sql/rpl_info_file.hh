@@ -158,7 +158,7 @@ struct InfoFile
     /// @param other not `nullptr`
     auto &operator=(const char *other)
     {
-      strmake_buf(this->buf, other);
+      strmake(buf, other, size-1);
       return *this;
     }
     virtual bool load_from(IO_CACHE *file) override
@@ -245,35 +245,38 @@ protected:
     std::from_chars_result result= std::from_chars(
       field1.buf, &field1.buf[sizeof(field1.buf)], lines);
     // Skip the first field in the for loop if that line was not a line count.
-    size_t i= result.ec != IntIOCache::ERRC_OK || *(result.ptr) != '\n';
+    size_t i= result.ec != IntIOCache::ERRC_OK || *(result.ptr) != '\0';
     /**
       Set the default after parsing: While std::from_chars() does not replace
       the output if it failed, it does replace if the line is not fully spent.
     */
     if (i)
       lines= default_lines;
-    size_t fields_count= MY_MIN(lines, fields.size());
-    for (; i < fields_count; ++i)
+    for (; i < lines; ++i)
     {
-      const mem_fn &pm= fields.begin()[i];
-      if (static_cast<bool>(pm) && pm(this).load_from(&file))
-        return true;
-    }
-    /*
-      Count and discard remaining lines if the line count runs beyond `fields`.
-      This is especially to prepare for @ref MasterInfoFile for MariaDB 10.0+,
-      which reserves a bunch of lines before its unique `key=value` section
-      to accomodate any future line-based (old-style) additions in MySQL.
-      (This will make moving from MariaDB to MySQL easier by not
-       requiring MySQL to recognize MariaDB `key=value` lines.)
-    */
-    while (i < lines)
-      switch (my_b_get(&file)) {
-      case my_b_EOF:
-        return true; // EOF already?
-      case '\n':
-        ++i;
+      char c;
+      if (i < fields.size()) // line known in the ` list
+      {
+        const mem_fn &pm= fields.begin()[i];
+        if (static_cast<bool>(pm))
+        {
+          if (pm(this).load_from(&file))
+            return true;
+          continue;
+        }
       }
+      /*
+        Count and discard unrecognized lines.
+        This is especially to prepare for @ref MasterInfoFile for MariaDB 10.0+,
+        which reserves a bunch of lines before its unique `key=value` section
+        to accomodate any future line-based (old-style) additions in MySQL.
+        (This will make moving from MariaDB to MySQL easier by not
+        requiring MySQL to recognize MariaDB `key=value` lines.)
+      */
+      while ((c= my_b_get(&file)) != '\n')
+        if (c == my_b_EOF)
+          return true; // EOF already?
+    }
     return false;
   }
 
@@ -298,9 +301,13 @@ protected:
       of effective lines in the first line of the file.
     */
     IntIOCache::to_chars(&file, lines);
+    my_b_write_byte(&file, '\n');
     for (const mem_fn &pm: fields)
+    {
       if (static_cast<bool>(pm))
         pm(this).save_to(&file);
+      my_b_write_byte(&file, '\n');
+    }
     /*
       Pad additional reserved lines:
       (1 for the line count line + field count) inclusive -> max line inclusive

@@ -84,7 +84,7 @@ struct MasterInfoFile: InfoFile
       optional.emplace(value);
       return *this;
     }
-    bool is_default() override { return optional.has_value(); }
+    bool is_default() override { return !optional.has_value(); }
     bool set_default() override
     {
       optional.reset();
@@ -214,25 +214,21 @@ struct MasterInfoFile: InfoFile
       /// +1 for the terminating delimiter
       char buf[IntIOCache::BUF_SIZE<uint32_t> + 1];
       for (i=0; i < sizeof(buf); ++i)
-        switch (int c= my_b_get(file)) {
-        case my_b_EOF:
+      {
+        int c= my_b_get(file);
+        if (c == my_b_EOF)
           return true;
-        case ' ': // End of Field
-        case '\n': // End of Line
-          goto break_for1;
-        default:
-          buf[i]= c;
-        }
-      break_for1:
+        buf[i]= c;
+        if (c == /* End of Line */ '\n' || c == /* End of Count */ ' ')
+          break;
+      }
       /*
         * std::from_chars() fails if `count` will overflow in any way.
         * exclusive end index of the string = size
       */
       std::from_chars_result result= std::from_chars(buf, &buf[i], count);
-      if (result.ec != IntIOCache::ERRC_OK)
-        return true;
       // Reserve enough elements ahead of time.
-      if (allocate_dynamic(&array, count))
+      if (result.ec != IntIOCache::ERRC_OK || allocate_dynamic(&array, count))
         return true;
       while (count--)
       {
@@ -244,20 +240,18 @@ struct MasterInfoFile: InfoFile
         if (*(result.ptr) != ' ')
           return true;
         for (i=0; i < sizeof(buf); ++i)
+        {
           /*
             Bottlenecks from repeated IO does not affect the
             performance of reading char by char thanks to the cache.
           */
-          switch (int c= my_b_get(file)) {
-          case my_b_EOF:
+          int c= my_b_get(file);
+          if (c == my_b_EOF)
             return true;
-          case ' ': // End of Field
-          case '\n': // End of Line
-            goto break_for2;
-          default:
-            buf[i]= c;
-          }
-        break_for2:
+          buf[i]= c;
+          if (c == /* End of Count */ ' ' || c == /* End of Line */ '\n')
+            break;
+        }
         result= std::from_chars(buf, &buf[i], value);
         if (result.ec != IntIOCache::ERRC_OK)
           return true;
@@ -359,7 +353,7 @@ struct MasterInfoFile: InfoFile
       return *this;
     }
     bool is_default() override
-    { return mode <= enum_master_use_gtid::DEFAULT; }
+    { return mode >= enum_master_use_gtid::DEFAULT; }
     bool set_default() override
     {
       mode= enum_master_use_gtid::DEFAULT;
@@ -446,7 +440,7 @@ struct MasterInfoFile: InfoFile
       {
         my_b_write(file, (const uchar *)buf, size - 3);
         my_b_write_byte(file, '.');
-        my_b_write(file, &(const uchar &)result.ptr[-3], 3);
+        my_b_write(file, (const uchar *)(&result.ptr[-3]), 3);
       }
       else
       {
@@ -480,7 +474,7 @@ struct MasterInfoFile: InfoFile
     &MasterInfoFile::master_ssl_key,
     &MasterInfoFile::master_ssl_verify_server_cert,
     &MasterInfoFile::master_heartbeat_period,
-    // &MasterInfoFile::master_bind, // MDEV-19248
+    nullptr, // &MasterInfoFile::master_bind, // MDEV-19248
     &MasterInfoFile::ignore_server_ids,
     nullptr, // MySQL field `master_uuid`, which MariaDB ignores.
     &MasterInfoFile::master_retry_count,
