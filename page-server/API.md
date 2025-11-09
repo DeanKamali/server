@@ -142,3 +142,4 @@ Error responses include a JSON body with `status: "error"` and an `error` field 
 - Authentication/authorization
 - TLS/HTTPS support
 
+

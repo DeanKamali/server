@@ -368,6 +368,7 @@ zzz/*
 x64/
 x86/
 build/
+build-debug/
 bld/
 [Bb]in/
 /cmake-build-debug/
@@ -628,3 +629,7 @@ tests/mariadb-client-test
 versioninfo_dll.rc
 versioninfo_exe.rc
 win/packaging/ca/symlinks.cc
+
+# Page Server build artifacts
+page-server/page-server
+page-server/*.log
