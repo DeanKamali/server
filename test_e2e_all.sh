@@ -1,7 +1,9 @@
 #!/bin/bash
 
-# Comprehensive End-to-End Test Script for Page Server
-# Tests all storage backends: File, S3, and Hybrid (Neon-style tiered caching)
+# Comprehensive End-to-End Test Script
+# Tests:
+#   1. Page Server with all storage backends (File, S3, Hybrid)
+#   2. Full serverless stack integration (Control Plane + Page Server + Safekeeper + MariaDB)
 
 set -e
 
@@ -19,6 +21,27 @@ S3_REGION="us-east-1"
 S3_ACCESS_KEY="X7SMWFBIMHK761MZDCM4"
 S3_SECRET_KEY="HeCjI9zsWe6lemh42fmCCugfyF06f7zXlyb9VY0G"
 
+# Full Integration Test Configuration
+CONTROL_PLANE_URL="${CONTROL_PLANE_URL:-http://localhost:8080}"
+HOST_IP="${HOST_IP:-$(hostname -I 2>/dev/null | awk '{print $1}' || ip route get 8.8.8.8 2>/dev/null | awk '{print $7; exit}' || echo 'host.docker.internal')}"
+PAGE_SERVER_URL_INTEGRATION="${PAGE_SERVER_URL_INTEGRATION:-http://${HOST_IP}:8081}"
+SAFEKEEPER_URL="${SAFEKEEPER_URL:-http://${HOST_IP}:8082}"
+MARIADB_IMAGE="${MARIADB_IMAGE:-stackblaze/mariadb-pageserver:latest}"
+
+# Directories
+PAGE_SERVER_DIR="${PAGE_SERVER_DIR:-./page-server}"
+SAFEKEEPER_DIR="${SAFEKEEPER_DIR:-./safekeeper}"
+CONTROL_PLANE_DIR="${CONTROL_PLANE_DIR:-./control-plane}"
+
+# Integration test PIDs
+PAGE_SERVER_PID_INTEGRATION=""
+SAFEKEEPER_PID=""
+CONTROL_PLANE_PID=""
+
+# Test mode flags (can be overridden)
+RUN_STORAGE_TESTS=${RUN_STORAGE_TESTS:-true}
+RUN_INTEGRATION_TEST=${RUN_INTEGRATION_TEST:-true}
+
 # Kill any existing Page Server on this port
 lsof -ti:${PAGE_SERVER_PORT} | xargs kill -9 2>/dev/null || true
 sleep 1
@@ -27,6 +50,7 @@ sleep 1
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 # Test counters
@@ -47,6 +71,10 @@ log_warn() {
     echo -e "${YELLOW}⚠${NC} $1"
 }
 
+log_test() {
+    echo -e "${BLUE}[TEST]${NC} $1"
+}
+
 test_pass() {
     TESTS_PASSED=$((TESTS_PASSED + 1))
     log_info "$1"
@@ -56,7 +84,7 @@ test_fail() {
     log_error "$1"
 }
 
-# Cleanup function
+# Cleanup function for storage tests
 cleanup() {
     if [ -n "$PAGE_SERVER_PID" ]; then
         echo ""
@@ -64,6 +92,32 @@ cleanup() {
         kill $PAGE_SERVER_PID 2>/dev/null || true
         wait $PAGE_SERVER_PID 2>/dev/null || true
     fi
+}
+
+# Cleanup function for integration test
+cleanup_integration() {
+    echo ""
+    echo -e "${YELLOW}Cleaning up integration test services...${NC}"
+    
+    if [ -n "$PAGE_SERVER_PID_INTEGRATION" ]; then
+        kill $PAGE_SERVER_PID_INTEGRATION 2>/dev/null || true
+        echo "   Stopped Page Server (integration)"
+    fi
+    
+    if [ -n "$SAFEKEEPER_PID" ]; then
+        kill $SAFEKEEPER_PID 2>/dev/null || true
+        echo "   Stopped Safekeeper"
+    fi
+    
+    if [ -n "$CONTROL_PLANE_PID" ]; then
+        kill $CONTROL_PLANE_PID 2>/dev/null || true
+        echo "   Stopped Control Plane"
+    fi
+    
+    # Clean up test pods
+    kubectl delete pod -l app=mariadb-compute 2>/dev/null || true
+    
+    echo -e "${GREEN}Integration cleanup complete${NC}"
 }
 
 trap cleanup EXIT
@@ -320,27 +374,280 @@ test_hybrid_storage() {
     sleep 2
 }
 
+# ============================================================================
+# Full Integration Test Functions (from test_full_integration.sh)
+# ============================================================================
+
+wait_for_service() {
+    local url=$1
+    local name=$2
+    local max_attempts=30
+    local attempt=0
+    
+    log_info "Waiting for $name to be ready..."
+    while [ $attempt -lt $max_attempts ]; do
+        if curl -s -f "$url" > /dev/null 2>&1; then
+            test_pass "$name is ready"
+            return 0
+        fi
+        attempt=$((attempt + 1))
+        sleep 1
+    done
+    
+    test_fail "$name is not responding after $max_attempts attempts"
+    return 1
+}
+
+start_page_server_integration() {
+    log_test "Starting Page Server for integration test..."
+    
+    if [ ! -f "$PAGE_SERVER_DIR/page-server" ]; then
+        log_info "Page Server binary not found, building..."
+        if [ ! -f "$PAGE_SERVER_DIR/build.sh" ]; then
+            test_fail "build.sh not found in $PAGE_SERVER_DIR"
+            return 1
+        fi
+        cd "$PAGE_SERVER_DIR"
+        chmod +x build.sh
+        ./build.sh
+        if [ ! -f "./page-server" ]; then
+            test_fail "Failed to build Page Server"
+            cd ..
+            return 1
+        fi
+        cd ..
+    fi
+    
+    cd "$PAGE_SERVER_DIR"
+    mkdir -p ./page-server-data
+    ./page-server -port 8081 -data-dir ./page-server-data > page-server.log 2>&1 &
+    PAGE_SERVER_PID_INTEGRATION=$!
+    cd ..
+    
+    sleep 2
+    wait_for_service "$PAGE_SERVER_URL_INTEGRATION/api/v1/ping" "Page Server"
+}
+
+start_safekeeper_integration() {
+    log_test "Starting Safekeeper..."
+    
+    if [ ! -f "$SAFEKEEPER_DIR/safekeeper" ]; then
+        log_info "Safekeeper binary not found, building..."
+        if [ ! -f "$SAFEKEEPER_DIR/build.sh" ]; then
+            test_fail "build.sh not found in $SAFEKEEPER_DIR"
+            return 1
+        fi
+        cd "$SAFEKEEPER_DIR"
+        chmod +x build.sh
+        ./build.sh
+        if [ ! -f "./safekeeper" ]; then
+            test_fail "Failed to build Safekeeper"
+            cd ..
+            return 1
+        fi
+        cd ..
+    fi
+    
+    cd "$SAFEKEEPER_DIR"
+    mkdir -p ./safekeeper-data
+    ./safekeeper -port 8082 -data-dir ./safekeeper-data > safekeeper.log 2>&1 &
+    SAFEKEEPER_PID=$!
+    cd ..
+    
+    sleep 2
+    wait_for_service "$SAFEKEEPER_URL/api/v1/ping" "Safekeeper"
+}
+
+start_control_plane_integration() {
+    log_test "Starting Control Plane..."
+    
+    if [ ! -f "$CONTROL_PLANE_DIR/control-plane" ]; then
+        log_info "Control Plane binary not found, building..."
+        cd "$CONTROL_PLANE_DIR" && go build -o control-plane ./cmd/api && cd ..
+    fi
+    
+    export MARIADB_PAGESERVER_IMAGE="$MARIADB_IMAGE"
+    cd "$CONTROL_PLANE_DIR"
+    ./control-plane -port 8080 -db-type sqlite > control-plane.log 2>&1 &
+    CONTROL_PLANE_PID=$!
+    cd ..
+    
+    wait_for_service "$CONTROL_PLANE_URL/api/v1/projects" "Control Plane"
+}
+
+test_full_integration() {
+    log_test "Testing full serverless stack integration..."
+    
+    # Create project
+    log_info "Creating project with Page Server: $PAGE_SERVER_URL_INTEGRATION and Safekeeper: $SAFEKEEPER_URL"
+    PROJECT_RESPONSE=$(curl -s -X POST "$CONTROL_PLANE_URL/api/v1/projects" \
+        -H "Content-Type: application/json" \
+        -d "{
+            \"name\": \"integration-test\",
+            \"config\": {
+                \"page_server_url\": \"$PAGE_SERVER_URL_INTEGRATION\",
+                \"safekeeper_url\": \"$SAFEKEEPER_URL\",
+                \"idle_timeout\": 300,
+                \"max_connections\": 100
+            }
+        }")
+    
+    PROJECT_ID=$(echo "$PROJECT_RESPONSE" | jq -r '.id' 2>/dev/null || echo "")
+    if [ -z "$PROJECT_ID" ] || [ "$PROJECT_ID" = "null" ]; then
+        test_fail "Failed to create project: $PROJECT_RESPONSE"
+        return 1
+    fi
+    
+    test_pass "Project created: $PROJECT_ID"
+    
+    # Create compute node
+    log_info "Creating compute node with image: $MARIADB_IMAGE"
+    COMPUTE_RESPONSE=$(curl -s -X POST "$CONTROL_PLANE_URL/api/v1/projects/$PROJECT_ID/compute" \
+        -H "Content-Type: application/json" \
+        -d "{
+            \"config\": {
+                \"image\": \"$MARIADB_IMAGE\",
+                \"page_server_url\": \"$PAGE_SERVER_URL_INTEGRATION\",
+                \"safekeeper_url\": \"$SAFEKEEPER_URL\",
+                \"resources\": {
+                    \"cpu\": \"100m\",
+                    \"memory\": \"256Mi\"
+                }
+            }
+        }")
+    
+    COMPUTE_ID=$(echo "$COMPUTE_RESPONSE" | jq -r '.id' 2>/dev/null || echo "")
+    if [ -z "$COMPUTE_ID" ] || [ "$COMPUTE_ID" = "null" ]; then
+        test_fail "Failed to create compute node: $COMPUTE_RESPONSE"
+        return 1
+    fi
+    
+    test_pass "Compute node created: $COMPUTE_ID"
+    
+    # Wait for pod to be ready
+    log_info "Waiting for MariaDB pod to be ready (this may take a few minutes)..."
+    POD_NAME=$(kubectl get pods -l compute-id=$COMPUTE_ID -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
+    
+    if [ -z "$POD_NAME" ]; then
+        test_fail "Pod not found for compute node $COMPUTE_ID"
+        return 1
+    fi
+    
+    # Wait up to 5 minutes for pod to be ready
+    POD_STATUS=""
+    for i in {1..60}; do
+        POD_STATUS=$(kubectl get pod $POD_NAME -o jsonpath='{.status.phase}' 2>/dev/null || echo "Unknown")
+        if [ "$POD_STATUS" = "Running" ]; then
+            test_pass "Pod is running: $POD_NAME"
+            break
+        fi
+        if [ "$POD_STATUS" = "Failed" ] || [ "$POD_STATUS" = "Error" ]; then
+            test_fail "Pod failed: $POD_NAME"
+            kubectl describe pod $POD_NAME 2>/dev/null || true
+            return 1
+        fi
+        sleep 5
+    done
+    
+    if [ "$POD_STATUS" != "Running" ]; then
+        test_fail "Pod did not become ready in time"
+        kubectl describe pod $POD_NAME 2>/dev/null || true
+        return 1
+    fi
+    
+    # Verify connections
+    log_info "Checking Page Server metrics..."
+    curl -s "$PAGE_SERVER_URL_INTEGRATION/api/v1/metrics" | grep -i "page\|request" | head -5 || log_warn "Metrics endpoint not available"
+    
+    log_info "Checking Safekeeper metrics..."
+    curl -s "$SAFEKEEPER_URL/api/v1/metrics" | grep -i "wal\|request" | head -5 || log_warn "Metrics endpoint not available"
+    
+    test_pass "Full integration test completed!"
+    
+    # Cleanup test resources
+    log_info "Cleaning up test resources..."
+    curl -s -X DELETE "$CONTROL_PLANE_URL/api/v1/projects/$PROJECT_ID" > /dev/null
+    test_pass "Test resources cleaned up"
+}
+
+# ============================================================================
 # Main test execution
+# ============================================================================
+
 main() {
     echo "╔══════════════════════════════════════════════════════════════╗"
-    echo "║     Page Server Comprehensive E2E Test Suite                ║"
+    echo "║     Comprehensive End-to-End Test Suite                      ║"
     echo "╚══════════════════════════════════════════════════════════════╝"
     echo ""
-    echo "Testing all storage backends:"
-    echo "  1. File Storage"
-    echo "  2. S3 Storage (Wasabi)"
-    echo "  3. Hybrid Storage (Neon-style tiered caching)"
-    echo ""
     
-    # Run test suites
-    test_file_storage
-    test_s3_storage
-    test_hybrid_storage
+    # Reset counters
+    TESTS_PASSED=0
+    TESTS_FAILED=0
     
-    # Print summary
+    # Part 1: Storage Backend Tests
+    if [ "$RUN_STORAGE_TESTS" = "true" ]; then
+        echo "╔══════════════════════════════════════════════════════════════╗"
+        echo "║  PART 1: Page Server Storage Backend Tests                 ║"
+        echo "╚══════════════════════════════════════════════════════════════╝"
+        echo ""
+        echo "Testing all storage backends:"
+        echo "  1. File Storage"
+        echo "  2. S3 Storage (Wasabi)"
+        echo "  3. Hybrid Storage (Neon-style tiered caching)"
+        echo ""
+        
+        test_file_storage
+        test_s3_storage
+        test_hybrid_storage
+    else
+        log_warn "Skipping storage backend tests (RUN_STORAGE_TESTS=false)"
+    fi
+    
+    # Part 2: Full Integration Test
+    if [ "$RUN_INTEGRATION_TEST" = "true" ]; then
+        echo ""
+        echo "╔══════════════════════════════════════════════════════════════╗"
+        echo "║  PART 2: Full Serverless Stack Integration Test             ║"
+        echo "╚══════════════════════════════════════════════════════════════╝"
+        echo ""
+        echo "Testing complete serverless stack:"
+        echo "  - Control Plane"
+        echo "  - Page Server"
+        echo "  - Safekeeper"
+        echo "  - MariaDB Compute Node (Kubernetes)"
+        echo ""
+        
+        # Check prerequisites
+        if ! command -v kubectl > /dev/null 2>&1; then
+            test_fail "kubectl not found. Please install kubectl."
+            RUN_INTEGRATION_TEST=false
+        elif ! kubectl cluster-info > /dev/null 2>&1; then
+            test_fail "Kubernetes cluster not accessible. Please check kubeconfig."
+            RUN_INTEGRATION_TEST=false
+        else
+            # Setup cleanup trap for integration test
+            trap cleanup_integration EXIT
+            
+            # Start services
+            start_page_server_integration
+            start_safekeeper_integration
+            start_control_plane_integration
+            
+            # Run integration test
+            test_full_integration
+            
+            # Cleanup
+            cleanup_integration
+            trap cleanup EXIT
+        fi
+    else
+        log_warn "Skipping integration test (RUN_INTEGRATION_TEST=false)"
+    fi
+    
+    # Print final summary
     echo ""
     echo "╔══════════════════════════════════════════════════════════════╗"
-    echo "║                    Test Summary                              ║"
+    echo "║                    Final Test Summary                        ║"
     echo "╚══════════════════════════════════════════════════════════════╝"
     echo ""
     echo "Tests Passed: $TESTS_PASSED"

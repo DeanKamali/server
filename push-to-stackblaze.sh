@@ -17,3 +17,4 @@ echo "To use this image in the control plane:"
 echo "  export MARIADB_PAGESERVER_IMAGE=stackblaze/mariadb-pageserver:latest"
 echo "  ./start_control_plane.sh"
 
+

@@ -94,3 +94,4 @@ echo "  kubectl run page-server --image=$REGISTRY/$REGISTRY_USER/page-server:$IM
 echo "  kubectl run safekeeper --image=$REGISTRY/$REGISTRY_USER/safekeeper:$IMAGE_TAG"
 echo "  kubectl run control-plane --image=$REGISTRY/$REGISTRY_USER/control-plane:$IMAGE_TAG"
 
+

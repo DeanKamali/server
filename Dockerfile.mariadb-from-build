@@ -58,3 +58,4 @@ ENV PATH="/usr/local/mysql/bin:$PATH"
 ENTRYPOINT ["docker-entrypoint.sh"]
 CMD ["mysqld"]
 
+

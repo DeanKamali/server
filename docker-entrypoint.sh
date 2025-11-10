@@ -45,3 +45,4 @@ fi
 # Start MariaDB
 exec mysqld --user=mysql --datadir=/var/lib/mysql
 
+

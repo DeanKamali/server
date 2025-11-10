@@ -13,15 +13,17 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 
+	"github.com/linux/projects/server/control-plane/internal/billing"
 	"github.com/linux/projects/server/control-plane/internal/state"
 	"github.com/linux/projects/server/control-plane/pkg/types"
 )
 
 // Manager manages compute node lifecycle in Kubernetes
 type Manager struct {
-	k8sClient  kubernetes.Interface
-	stateStore state.StoreInterface
-	namespace  string
+	k8sClient    kubernetes.Interface
+	stateStore   state.StoreInterface
+	namespace    string
+	usageTracker *billing.UsageTracker
 }
 
 // NewManager creates a new compute manager
@@ -32,10 +34,16 @@ func NewManager(k8sConfig *rest.Config, stateStore state.StoreInterface, namespa
 	}
 
 	return &Manager{
-		k8sClient:  clientset,
-		stateStore: stateStore,
-		namespace:  namespace,
+		k8sClient:    clientset,
+		stateStore:   stateStore,
+		namespace:    namespace,
+		usageTracker: nil, // Set via SetUsageTracker
 	}, nil
+}
+
+// SetUsageTracker sets the usage tracker for billing
+func (m *Manager) SetUsageTracker(tracker *billing.UsageTracker) {
+	m.usageTracker = tracker
 }
 
 // CreateComputeNode creates a new MariaDB compute node in Kubernetes
@@ -150,6 +158,11 @@ func (m *Manager) CreateComputeNode(projectID string, config types.ComputeConfig
 		return nil, fmt.Errorf("failed to save compute node: %w", err)
 	}
 
+	// Record compute start for billing (mimics Neon's consumption metrics)
+	if m.usageTracker != nil {
+		_ = m.usageTracker.RecordComputeStart(projectID, computeID)
+	}
+
 	return computeNode, nil
 }
 
@@ -253,7 +266,16 @@ func (m *Manager) SuspendComputeNode(computeID string) error {
 	}
 
 	// Update state to suspended
-	return m.stateStore.UpdateComputeNodeState(computeID, types.StateSuspended)
+	if err := m.stateStore.UpdateComputeNodeState(computeID, types.StateSuspended); err != nil {
+		return err
+	}
+
+	// Record compute stop for billing (mimics Neon's consumption metrics)
+	if m.usageTracker != nil {
+		_ = m.usageTracker.RecordComputeStop(computeID)
+	}
+
+	return nil
 }
 
 // ResumeComputeNode resumes a suspended compute node
@@ -381,6 +403,11 @@ createPod:
 	node.LastActivity = time.Now()
 	if err := m.stateStore.UpdateComputeNodeState(computeID, types.StateActive); err != nil {
 		return nil, err
+	}
+
+	// Record compute start for billing (mimics Neon's consumption metrics)
+	if m.usageTracker != nil {
+		_ = m.usageTracker.RecordComputeStart(node.ProjectID, computeID)
 	}
 
 	return node, nil

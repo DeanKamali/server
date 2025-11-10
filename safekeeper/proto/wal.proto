@@ -1,0 +1,45 @@
+syntax = "proto3";
+
+package safekeeper;
+
+option go_package = "github.com/linux/projects/server/safekeeper/internal/safekeeper";
+
+// WALRecordProto represents a WAL record in Protobuf format
+message WALRecordProto {
+  uint64 lsn = 1;           // Log Sequence Number
+  bytes wal_data = 2;       // WAL data (compressed if compression is enabled)
+  uint32 space_id = 3;     // Tablespace ID
+  uint32 page_no = 4;       // Page number
+}
+
+// RecoveryStateProto represents recovery state in Protobuf format
+message RecoveryStateProto {
+  uint64 latest_lsn = 1;    // Latest LSN
+  repeated TimelineProto timelines = 2;  // List of timelines
+  uint64 wal_count = 3;     // Total WAL count
+  string replica_id = 4;    // Replica identifier
+  uint64 term = 5;          // Current term
+}
+
+// TimelineProto represents a timeline in Protobuf format
+message TimelineProto {
+  string id = 1;            // Timeline ID
+  uint64 parent_lsn = 2;   // Parent LSN
+  string parent_timeline_id = 3;  // Parent timeline ID
+  uint64 latest_lsn = 4;    // Latest LSN for this timeline
+  int64 created_at = 5;     // Creation timestamp (Unix time)
+}
+
+// WALRangeRequestProto represents a request for WAL range
+message WALRangeRequestProto {
+  uint64 start_lsn = 1;    // Start LSN
+  uint64 end_lsn = 2;       // End LSN
+}
+
+// WALRangeResponseProto represents a response with WAL range
+message WALRangeResponseProto {
+  repeated WALRecordProto wals = 1;  // List of WAL records
+}
+
+
+
