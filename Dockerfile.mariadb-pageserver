@@ -1,0 +1,84 @@
+# Dockerfile for MariaDB with Page Server patches
+# This builds a custom MariaDB image with InnoDB patches for Page Server integration
+
+FROM debian:bookworm-slim AS builder
+
+# Install build dependencies
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    cmake \
+    git \
+    libncurses5-dev \
+    libssl-dev \
+    libzstd-dev \
+    libbz2-dev \
+    liblzma-dev \
+    libsnappy-dev \
+    libz-dev \
+    libcurl4-openssl-dev \
+    pkg-config \
+    bison \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy MariaDB source (assumes this Dockerfile is in the server root)
+WORKDIR /build
+COPY . /build
+
+# Build MariaDB
+RUN mkdir -p build && cd build && \
+    cmake .. \
+    -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+    -DPLUGIN_MROONGA=NO \
+    -DPLUGIN_ROCKSDB=NO \
+    -DPLUGIN_SPIDER=NO \
+    -DPLUGIN_TOKUDB=NO \
+    -DPLUGIN_COLUMNSTORE=NO \
+    -DWITH_SSL=system \
+    -DWITH_ZLIB=system \
+    && make -j$(nproc) \
+    && make install DESTDIR=/install
+
+# Runtime image
+FROM debian:bookworm-slim
+
+# Install runtime dependencies
+RUN apt-get update && apt-get install -y \
+    libssl3 \
+    libncurses6 \
+    libzstd1 \
+    libbz2-1.0 \
+    liblzma5 \
+    libsnappy1v5 \
+    zlib1g \
+    libcurl4 \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy MariaDB binaries from builder
+COPY --from=builder /install/usr/local /usr/local
+
+# Create mysql user
+RUN groupadd -r mysql && useradd -r -g mysql mysql
+
+# Create data directory
+RUN mkdir -p /var/lib/mysql && \
+    chown -R mysql:mysql /var/lib/mysql
+
+# Set environment variables
+ENV MYSQL_ROOT_PASSWORD=root
+ENV MYSQL_DATABASE=test
+ENV PAGE_SERVER_URL=""
+ENV SAFEKEEPER_URL=""
+ENV PROJECT_ID=""
+ENV COMPUTE_ID=""
+
+# Expose MySQL port
+EXPOSE 3306
+
+# Copy entrypoint script
+COPY docker-entrypoint.sh /usr/local/bin/
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
+
+ENTRYPOINT ["docker-entrypoint.sh"]
+CMD ["mysqld"]
+

@@ -1,0 +1,60 @@
+# Dockerfile for MariaDB with Page Server patches
+# Uses already-built binaries (assumes binaries are in /usr/local/mysql or similar)
+
+FROM debian:bookworm-slim
+
+# Install runtime dependencies
+RUN apt-get update && apt-get install -y \
+    libssl3 \
+    libncurses6 \
+    libzstd1 \
+    libbz2-1.0 \
+    liblzma5 \
+    libsnappy1v5 \
+    zlib1g \
+    libcurl4 \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create mysql user
+RUN groupadd -r mysql && useradd -r -g mysql mysql
+
+# Copy MariaDB binaries from host (built with patches)
+# Adjust these paths based on where your build installed MariaDB
+COPY --from=build /usr/local/mysql /usr/local/mysql
+# OR if installed to system paths:
+# COPY /usr/local/bin/mysqld /usr/local/bin/
+# COPY /usr/local/bin/mysql /usr/local/bin/
+# COPY /usr/local/lib/mysql /usr/local/lib/mysql
+
+# Alternative: Copy from a specific build directory
+# Uncomment and adjust if your build is in a different location:
+# COPY build/sql/mysqld /usr/local/bin/
+# COPY build/client/mysql /usr/local/bin/
+# COPY build/libmysql /usr/local/lib/
+
+# Create data directory
+RUN mkdir -p /var/lib/mysql && \
+    chown -R mysql:mysql /var/lib/mysql
+
+# Set environment variables
+ENV MYSQL_ROOT_PASSWORD=root
+ENV MYSQL_DATABASE=test
+ENV PAGE_SERVER_URL=""
+ENV SAFEKEEPER_URL=""
+ENV PROJECT_ID=""
+ENV COMPUTE_ID=""
+
+# Expose MySQL port
+EXPOSE 3306
+
+# Copy entrypoint script
+COPY docker-entrypoint.sh /usr/local/bin/
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
+
+# Set PATH to include MariaDB binaries
+ENV PATH="/usr/local/mysql/bin:$PATH"
+
+ENTRYPOINT ["docker-entrypoint.sh"]
+CMD ["mysqld"]
+
