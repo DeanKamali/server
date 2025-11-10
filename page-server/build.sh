@@ -11,8 +11,8 @@ if [ -f page-server ]; then
     rm page-server
 fi
 
-# Build
-go build -o page-server main.go
+# Build from cmd/pageserver
+go build -o page-server ./cmd/pageserver
 
 if [ $? -eq 0 ]; then
     echo "✓ Page Server built successfully"
@@ -21,5 +21,6 @@ else
     echo "✗ Build failed"
     exit 1
 fi
+
 
 

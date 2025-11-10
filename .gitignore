@@ -633,3 +633,8 @@ win/packaging/ca/symlinks.cc
 # Page Server build artifacts
 page-server/page-server
 page-server/*.log
+page-server-data/
+page-server/page-server-data/
+page-server/certs/
+page-server/*.crt
+page-server/*.key
